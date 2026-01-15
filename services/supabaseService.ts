@@ -6,11 +6,47 @@ export const supabaseService = {
   // Database Health Monitoring
   async checkConnection(): Promise<boolean> {
     try {
-      const { data, error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
-      return !error;
+      // We check for a simple count on profiles to verify table existence and connectivity
+      const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+      if (error) {
+        console.error("Supabase Connection Error:", error.message);
+        return false;
+      }
+      return true;
     } catch (e) {
       return false;
     }
+  },
+
+  // Dashboard Statistics
+  async getDashboardStats() {
+    const [
+      { count: ridesCount },
+      { count: ridersCount },
+      { count: activeRidersCount },
+      { count: passengersCount }
+    ] = await Promise.all([
+      supabase.from('rides').select('*', { count: 'exact', head: true }),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'rider'),
+      supabase.from('rider_details').select('*', { count: 'exact', head: true }).eq('is_online', true),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
+    ]);
+
+    // Calculate revenue from transactions
+    const { data: revenueData } = await supabase
+      .from('transactions')
+      .select('amount')
+      .eq('type', 'admin_fee');
+    
+    const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
+
+    return {
+      ridesCount: ridesCount || 0,
+      ridersCount: ridersCount || 0,
+      activeRidersCount: activeRidersCount || 0,
+      passengersCount: passengersCount || 0,
+      totalRevenue
+    };
   },
 
   // Authentication
@@ -28,8 +64,6 @@ export const supabaseService = {
         };
     }
 
-    // In a real Supabase Auth setup, you'd use supabase.auth.signInWithPassword
-    // For this prototype, we'll query the profiles table directly
     const { data, error } = await supabase
       .from('profiles')
       .select('*, rider_details(*)')
@@ -39,7 +73,6 @@ export const supabaseService = {
 
     if (error || !data) return null;
     
-    // Simplification: Password check would be handled by Auth normally
     return {
       ...data,
       name: data.full_name,
@@ -47,8 +80,6 @@ export const supabaseService = {
   },
 
   async register(data: any, type: UserType) {
-    // 1. Create Auth User (Normally)
-    // 2. Create Profile
     const { data: profile, error } = await supabase
       .from('profiles')
       .insert({
