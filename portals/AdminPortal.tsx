@@ -9,7 +9,8 @@ import {
   Users, Truck, DollarSign, Activity, Download, Star, 
   ShieldAlert, Radio, Zap, TrendingUp, AlertTriangle, 
   CheckCircle2, Search, X, ShieldCheck, MessageSquare, 
-  Send, CheckCircle, Bell, Megaphone, Database, Wifi, WifiOff
+  Send, CheckCircle, Bell, Megaphone, Database, Wifi, WifiOff,
+  Cpu, HardDrive, Globe, RefreshCcw, Code, ExternalLink
 } from 'lucide-react';
 
 const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -30,13 +31,21 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   // Database status state
   const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [realtimeStats, setRealtimeStats] = useState({
+    ridesCount: 0,
+    ridersCount: 0,
+    activeRidersCount: 0,
+    passengersCount: 0,
+    totalRevenue: 0
+  });
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const riderMarkersRef = useRef<{ [key: string]: L.Marker }>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchData = () => {
+  const fetchData = async () => {
+    // Local mock data sync for UI prototype
     setRides(mockBackend.getRides());
     setRiders(mockBackend.getRiders());
     setPassengers(mockBackend.getPassengers());
@@ -47,25 +56,36 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       const updated = mockBackend.getLoadRequests().find(r => r.id === activeSupportRequest.id);
       if (updated) setActiveSupportRequest(updated);
     }
+
+    // Try to fetch real stats if DB is online
+    if (dbStatus === 'online') {
+      try {
+        const stats = await supabaseService.getDashboardStats();
+        setRealtimeStats(stats);
+      } catch (e) {
+        console.warn("Failed to fetch real-time stats", e);
+      }
+    }
+  };
+
+  const checkDB = async () => {
+    setDbStatus('checking');
+    const isOnline = await supabaseService.checkConnection();
+    setDbStatus(isOnline ? 'online' : 'offline');
+    if (isOnline) fetchData();
   };
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 3000);
-
-    // Database connectivity health check
-    const checkDB = async () => {
-      const isOnline = await supabaseService.checkConnection();
-      setDbStatus(isOnline ? 'online' : 'offline');
-    };
+    const interval = setInterval(fetchData, 5000);
     checkDB();
-    const dbInterval = setInterval(checkDB, 10000);
+    const dbInterval = setInterval(checkDB, 20000);
 
     return () => {
       clearInterval(interval);
       clearInterval(dbInterval);
     };
-  }, [activeSupportRequest?.id]);
+  }, [activeSupportRequest?.id, dbStatus]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -133,7 +153,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const toggleFlag = (userId: string, type: 'rider' | 'passenger') => {
     mockBackend.toggleFlagUser(userId, type);
-    fetchData(); // Immediate local update
+    fetchData(); 
   };
 
   const sendSupportMessage = () => {
@@ -156,15 +176,12 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     setShowEmergencyModal(false);
   };
 
-  const totalEarnings = transactions
-    .filter(t => t.type === 'admin_fee')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
+  // Dashboard Stats Logic - Prefer Real-time Supabase Data if available
   const stats = [
-    { label: 'Total Revenue', value: `₱${totalEarnings.toFixed(0)}`, icon: DollarSign, color: 'from-green-500 to-emerald-600', trend: '+12.5%' },
-    { label: 'Platform Rides', value: rides.length, icon: Activity, color: 'from-blue-500 to-indigo-600', trend: '+5.2%' },
-    { label: 'Active Fleet', value: riders.filter(r => r.isOnline).length, icon: Truck, color: 'from-yellow-400 to-orange-500', trend: 'Live' },
-    { label: 'Total Users', value: riders.length + passengers.length, icon: Users, color: 'from-purple-500 to-pink-600', trend: '+24' },
+    { label: 'Total Revenue', value: dbStatus === 'online' ? `₱${realtimeStats.totalRevenue.toFixed(0)}` : `₱${transactions.filter(t => t.type === 'admin_fee').reduce((sum, t) => sum + Math.abs(t.amount), 0).toFixed(0)}`, icon: DollarSign, color: 'from-green-500 to-emerald-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
+    { label: 'Platform Rides', value: dbStatus === 'online' ? realtimeStats.ridesCount : rides.length, icon: Activity, color: 'from-blue-500 to-indigo-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
+    { label: 'Active Fleet', value: dbStatus === 'online' ? realtimeStats.activeRidersCount : riders.filter(r => r.isOnline).length, icon: Truck, color: 'from-yellow-400 to-orange-500', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
+    { label: 'Total Users', value: dbStatus === 'online' ? (realtimeStats.ridersCount + realtimeStats.passengersCount) : (riders.length + passengers.length), icon: Users, color: 'from-purple-500 to-pink-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
   ];
 
   const chartData = [
@@ -179,6 +196,70 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const renderDashboard = () => (
     <div className="space-y-8 animate-fade-in">
+      {/* DB Monitoring Card */}
+      <div className={`p-6 rounded-[2.5rem] shadow-xl border transition-all duration-500 flex flex-col md:flex-row items-center gap-8 ${
+        dbStatus === 'online' ? 'bg-white border-green-100' : 'bg-red-50/50 border-red-100'
+      }`}>
+         <div className="flex items-center gap-6">
+            <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg animate-pulse ${
+               dbStatus === 'online' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+            }`}>
+               {dbStatus === 'online' ? <Wifi size={32} /> : <WifiOff size={32} />}
+            </div>
+            <div>
+               <div className="flex items-center gap-3">
+                  <h3 className="text-xl font-black italic uppercase tracking-tighter">SUPABASE STATUS: {dbStatus.toUpperCase()}</h3>
+                  {dbStatus === 'checking' && <RefreshCcw size={16} className="animate-spin text-gray-400" />}
+               </div>
+               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
+                  {dbStatus === 'online' 
+                    ? 'All systems nominal. Streaming real-time data from AWS Region.' 
+                    : 'Connectivity lost or schema missing. Please initialize database.md in Supabase SQL Editor.'}
+               </p>
+            </div>
+         </div>
+         <div className="flex-1 flex justify-end gap-3 w-full md:w-auto">
+            <button 
+              onClick={checkDB}
+              className="bg-black text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-gray-800 transition-all active:scale-95"
+            >
+               <RefreshCcw size={14} /> Retry Sync
+            </button>
+            {dbStatus === 'offline' && (
+              <a 
+                href="https://supabase.com/dashboard" 
+                target="_blank" 
+                className="bg-yellow-400 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-yellow-500 transition-all shadow-lg shadow-yellow-100"
+              >
+                 <ExternalLink size={14} /> Open Supabase Console
+              </a>
+            )}
+         </div>
+      </div>
+
+      {dbStatus === 'offline' && (
+        <div className="bg-black text-white p-8 rounded-[3rem] shadow-2xl space-y-6 border border-gray-800 relative overflow-hidden">
+           <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/5 rounded-full blur-3xl"></div>
+           <div className="flex items-center gap-4 text-yellow-400">
+              <Code size={24} />
+              <h4 className="text-lg font-black italic uppercase tracking-widest">Database Setup Required</h4>
+           </div>
+           <div className="grid md:grid-cols-3 gap-6">
+              {[
+                { step: '01', title: 'Open SQL Editor', desc: 'Navigate to the SQL Editor in your Supabase project dashboard.' },
+                { step: '02', title: 'Copy database.md', desc: 'Copy the full SQL script provided in your project root file.' },
+                { step: '03', title: 'Run & Refresh', desc: 'Execute the script to create tables and triggers, then refresh this portal.' }
+              ].map((step, i) => (
+                <div key={i} className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-2">
+                   <span className="text-2xl font-black italic text-yellow-400/50">{step.step}</span>
+                   <h5 className="font-black uppercase tracking-tighter text-sm">{step.title}</h5>
+                   <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
+                </div>
+              ))}
+           </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => (
           <div key={i} className="bg-white p-6 rounded-[2rem] shadow-xl border border-gray-100 relative overflow-hidden group hover:scale-[1.02] transition-transform">
@@ -187,7 +268,9 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg`}>
                  <stat.icon size={24} />
                </div>
-               <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-1 rounded-full">{stat.trend}</span>
+               <span className={`text-[10px] font-black px-2 py-1 rounded-full ${stat.trend === 'LIVE' ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                 {stat.trend}
+               </span>
             </div>
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
@@ -397,7 +480,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
            </div>
 
-           {/* Support Queue - More prominent */}
+           {/* Support Queue */}
            <div className="bg-black p-8 rounded-[2.5rem] shadow-2xl text-white overflow-hidden flex flex-col h-full border border-gray-800">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-black italic uppercase tracking-tighter text-yellow-400 flex items-center gap-3">
@@ -491,17 +574,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         <div>
            <div className="flex items-center gap-4">
              <h2 className="text-3xl font-black italic tracking-tighter uppercase text-gray-800">COMMAND CENTER</h2>
-             {/* Database connectivity status monitor */}
-             <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${
-               dbStatus === 'online' ? 'bg-green-50 border-green-200 text-green-600' : 
-               dbStatus === 'offline' ? 'bg-red-50 border-red-200 text-red-600' : 
-               'bg-gray-50 border-gray-200 text-gray-500'
-             }`}>
-                {dbStatus === 'online' ? <Wifi size={12} /> : dbStatus === 'offline' ? <WifiOff size={12} /> : <Database size={12} className="animate-pulse" />}
-                <span className="text-[9px] font-black uppercase tracking-widest">
-                  {dbStatus === 'online' ? 'DB Online' : dbStatus === 'offline' ? 'DB Offline' : 'Checking...'}
-                </span>
-             </div>
            </div>
            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Real-time Platform Orchestration</p>
         </div>
@@ -579,7 +651,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         </div>
       )}
 
-      {/* Support Chat Overlay - Now Global across Admin Portal */}
+      {/* Support Chat Overlay */}
       {activeSupportRequest && (
         <div className="fixed bottom-0 right-0 left-0 md:left-64 z-[100] p-4 pointer-events-none">
           <div className="bg-white rounded-[3rem] shadow-2xl border-4 border-black overflow-hidden flex flex-col h-[550px] animate-slide-up pointer-events-auto max-w-4xl mx-auto">
