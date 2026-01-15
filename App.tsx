@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserType, User, Passenger, Rider, EmergencyAlert } from './types';
 import { supabaseService } from './services/supabaseService';
+import { mockBackend } from './services/mockBackend'; // Added for fallback support
 import Layout from './components/Layout';
 import PassengerPortal from './portals/PassengerPortal';
 import RiderPortal from './portals/RiderPortal';
@@ -10,7 +11,7 @@ import {
   LogIn, ShieldAlert, X, Megaphone, Zap, ShieldCheck, 
   DollarSign, Clock, ChevronRight, User as UserIcon, 
   UserPlus, ArrowLeft, Bike, Star, Info, CheckCircle,
-  MapPin, Heart, FileText, Lock
+  MapPin, Heart, FileText, Lock, AlertCircle
 } from 'lucide-react';
 
 type LandingView = 'landing' | 'login' | 'register' | 'safety' | 'pricing' | 'areas' | 'mission' | 'privacy' | 'terms';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [currentAlert, setCurrentAlert] = useState<EmergencyAlert | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dbAvailable, setDbAvailable] = useState<boolean | null>(null);
 
   // Landing Page States
   const [view, setView] = useState<LandingView>('landing');
@@ -66,33 +68,60 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Initial check for latest emergency
-    const fetchAlert = async () => {
+    const initializeApp = async () => {
+        // Initialize mock backend just in case
+        mockBackend.initialize();
+        
+        // Check DB Status
+        const connected = await supabaseService.checkConnection();
+        setDbAvailable(connected);
+
+        // Initial alert fetch
         try {
             const alert = await supabaseService.getLatestAlert();
-            setCurrentAlert(alert as any);
+            if (alert) setCurrentAlert(alert as any);
         } catch (e) {
             console.error("Alert fetch failed", e);
         }
+        
+        setIsInitialized(true);
     };
-    fetchAlert();
+    
+    initializeApp();
+    const alertInterval = setInterval(async () => {
+        if (dbAvailable) {
+            const alert = await supabaseService.getLatestAlert();
+            if (alert) setCurrentAlert(alert as any);
+        }
+    }, 30000);
 
-    const alertInterval = setInterval(fetchAlert, 30000);
-    setIsInitialized(true);
     return () => clearInterval(alertInterval);
-  }, []);
+  }, [dbAvailable]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    
     try {
-        const user = await supabaseService.login(username, password, authRole);
-        if (user) {
-          setCurrentUser(user);
-          setActiveTab(user.userType === 'admin' ? 'dashboard' : 'home');
+        // 1. Try Supabase if available
+        if (dbAvailable) {
+          const user = await supabaseService.login(username, password, authRole);
+          if (user) {
+            setCurrentUser(user);
+            setActiveTab(user.userType === 'admin' ? 'dashboard' : 'home');
+            return;
+          }
+        }
+
+        // 2. Fallback to Mock
+        const mockUser = mockBackend.login(username, password, authRole);
+        if (mockUser) {
+          setCurrentUser(mockUser);
+          setActiveTab(mockUser.userType === 'admin' ? 'dashboard' : 'home');
+          if (dbAvailable) setError('User found in Local Storage only. DB sync pending.');
         } else {
-          setError('Invalid username or password.');
+          setError(dbAvailable ? 'Invalid credentials.' : 'DB Offline & User not found in Local Storage.');
         }
     } catch (err: any) {
         setError(err.message || 'An error occurred during login.');
@@ -120,9 +149,31 @@ const App: React.FC = () => {
                 }
             };
         }
-        const newUser = await supabaseService.register(registrationData, authRole);
-        setCurrentUser(newUser as any);
+
+        // 1. Try Supabase
+        if (dbAvailable) {
+          try {
+            const newUser = await supabaseService.register(registrationData, authRole);
+            setCurrentUser(newUser as any);
+            setActiveTab('home');
+            return;
+          } catch (dbErr: any) {
+            console.error("Supabase Registration Failed:", dbErr);
+            setError(`DB Registration Failed: ${dbErr.message}. Checking Local Storage...`);
+            // Continue to mock fallback
+          }
+        }
+
+        // 2. Fallback to Mock
+        if (authRole === 'rider') {
+          const newUser = mockBackend.registerRider(registrationData);
+          setCurrentUser(newUser);
+        } else {
+          const newUser = mockBackend.registerPassenger(registrationData);
+          setCurrentUser(newUser);
+        }
         setActiveTab('home');
+        
     } catch (err: any) {
         setError(err.message || 'Registration failed.');
     } finally {
@@ -157,6 +208,13 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-yellow-200">
+        {/* Connection Notice */}
+        {dbAvailable === false && (
+          <div className="bg-orange-500 text-white text-[10px] font-black uppercase tracking-[0.2em] py-2 px-8 flex items-center justify-center gap-3">
+             <AlertCircle size={14} /> Database Offline. Operating in Local Prototype Mode.
+          </div>
+        )}
+
         {/* Landing Page Navbar */}
         <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 h-20 flex items-center justify-between px-8">
            <div 
@@ -375,7 +433,7 @@ const App: React.FC = () => {
 
                   {error && (
                     <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-xs font-bold flex items-center gap-3 animate-shake">
-                       <ShieldAlert size={16} /> {error}
+                       <ShieldAlert size={16} /> <span className="flex-1">{error}</span>
                     </div>
                   )}
 
