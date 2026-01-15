@@ -10,7 +10,7 @@ import {
   ShieldAlert, Radio, Zap, TrendingUp, AlertTriangle, 
   CheckCircle2, Search, X, ShieldCheck, MessageSquare, 
   Send, CheckCircle, Bell, Megaphone, Database, Wifi, WifiOff,
-  Cpu, HardDrive, Globe, RefreshCcw, Code, ExternalLink
+  Cpu, HardDrive, Globe, RefreshCcw, Code, ExternalLink, Info, DatabaseZap
 } from 'lucide-react';
 
 const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -176,7 +176,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     setShowEmergencyModal(false);
   };
 
-  // Dashboard Stats Logic - Prefer Real-time Supabase Data if available
   const stats = [
     { label: 'Total Revenue', value: dbStatus === 'online' ? `₱${realtimeStats.totalRevenue.toFixed(0)}` : `₱${transactions.filter(t => t.type === 'admin_fee').reduce((sum, t) => sum + Math.abs(t.amount), 0).toFixed(0)}`, icon: DollarSign, color: 'from-green-500 to-emerald-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
     { label: 'Platform Rides', value: dbStatus === 'online' ? realtimeStats.ridesCount : rides.length, icon: Activity, color: 'from-blue-500 to-indigo-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
@@ -214,7 +213,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
                   {dbStatus === 'online' 
                     ? 'All systems nominal. Streaming real-time data from AWS Region.' 
-                    : 'Connectivity lost or schema missing. Please initialize database.md in Supabase SQL Editor.'}
+                    : 'Connectivity lost or placeholder keys detected. Operating in Local Mock Mode.'}
                </p>
             </div>
          </div>
@@ -223,7 +222,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               onClick={checkDB}
               className="bg-black text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-gray-800 transition-all active:scale-95"
             >
-               <RefreshCcw size={14} /> Retry Sync
+               <RefreshCcw size={14} /> Re-Verify Connection
             </button>
             {dbStatus === 'offline' && (
               <a 
@@ -231,7 +230,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 target="_blank" 
                 className="bg-yellow-400 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-yellow-500 transition-all shadow-lg shadow-yellow-100"
               >
-                 <ExternalLink size={14} /> Open Supabase Console
+                 <ExternalLink size={14} /> Configure Database
               </a>
             )}
          </div>
@@ -241,14 +240,15 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         <div className="bg-black text-white p-8 rounded-[3rem] shadow-2xl space-y-6 border border-gray-800 relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/5 rounded-full blur-3xl"></div>
            <div className="flex items-center gap-4 text-yellow-400">
-              <Code size={24} />
-              <h4 className="text-lg font-black italic uppercase tracking-widest">Database Setup Required</h4>
+              <DatabaseZap size={24} />
+              <h4 className="text-lg font-black italic uppercase tracking-widest">Setup Guide: Fixing "Invalid API Error"</h4>
            </div>
+           <p className="text-xs text-gray-400 font-medium">To fix registration errors and sync this dashboard, follow these steps:</p>
            <div className="grid md:grid-cols-3 gap-6">
               {[
-                { step: '01', title: 'Open SQL Editor', desc: 'Navigate to the SQL Editor in your Supabase project dashboard.' },
-                { step: '02', title: 'Copy database.md', desc: 'Copy the full SQL script provided in your project root file.' },
-                { step: '03', title: 'Run & Refresh', desc: 'Execute the script to create tables and triggers, then refresh this portal.' }
+                { step: '01', title: 'Env Variables', desc: 'Set SUPABASE_URL and SUPABASE_ANON_KEY in your deployment environment.' },
+                { step: '02', title: 'Execute SQL', desc: 'Copy the content of database.md and run it in the Supabase SQL Editor.' },
+                { step: '03', title: 'RLS Policies', desc: 'Ensure Profiles and Rides tables allow INSERT/SELECT. (Check database.md updates)' }
               ].map((step, i) => (
                 <div key={i} className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-2">
                    <span className="text-2xl font-black italic text-yellow-400/50">{step.step}</span>
@@ -256,6 +256,10 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                    <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
                 </div>
               ))}
+           </div>
+           <div className="pt-4 border-t border-white/5 flex items-center gap-2 text-yellow-400">
+              <Info size={14} />
+              <p className="text-[10px] font-black uppercase tracking-widest">Prototype continues to work using Browser Local Storage.</p>
            </div>
         </div>
       )}
