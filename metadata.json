@@ -1,0 +1,7 @@
+{
+  "name": "MotoRide - Next Gen Motorcycle Hailing",
+  "description": "A comprehensive motorcycle ride-hailing platform featuring real-time bidding, government-regulated fares, and dedicated portals for passengers, riders, and administrators.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
