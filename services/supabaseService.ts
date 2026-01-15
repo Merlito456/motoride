@@ -6,52 +6,72 @@ export const supabaseService = {
   // Database Health Monitoring
   async checkConnection(): Promise<boolean> {
     try {
-      // We check for a simple count on profiles to verify table existence and connectivity
-      const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+      // Check if URL/Key are placeholders
+      const client = supabase as any;
+      const supabaseUrl = client.supabaseUrl;
+      const supabaseKey = client.supabaseKey;
+
+      if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('placeholder') || supabaseKey === 'your-anon-key') {
+        console.warn("Supabase keys are not configured correctly.");
+        return false;
+      }
+
+      // Test connectivity with a lightweight query
+      const { error } = await supabase.from('profiles').select('id').limit(1);
+      
       if (error) {
-        console.error("Supabase Connection Error:", error.message);
+        // If the table doesn't exist, it's a "successful" connection to Supabase but missing schema
+        if (error.code === '42P01') {
+          console.warn("Supabase connected but 'profiles' table not found. Schema needed.");
+          return false;
+        }
+        console.error("Supabase connection test failed:", error.message);
         return false;
       }
       return true;
     } catch (e) {
+      console.error("Critical connection failure:", e);
       return false;
     }
   },
 
   // Dashboard Statistics
   async getDashboardStats() {
-    const [
-      { count: ridesCount },
-      { count: ridersCount },
-      { count: activeRidersCount },
-      { count: passengersCount }
-    ] = await Promise.all([
-      supabase.from('rides').select('*', { count: 'exact', head: true }),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'rider'),
-      supabase.from('rider_details').select('*', { count: 'exact', head: true }).eq('is_online', true),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
-    ]);
+    try {
+      const [
+        { count: ridesCount },
+        { count: ridersCount },
+        { count: activeRidersCount },
+        { count: passengersCount }
+      ] = await Promise.all([
+        supabase.from('rides').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'rider'),
+        supabase.from('rider_details').select('*', { count: 'exact', head: true }).eq('is_online', true),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
+      ]);
 
-    // Calculate revenue from transactions
-    const { data: revenueData } = await supabase
-      .from('transactions')
-      .select('amount')
-      .eq('type', 'admin_fee');
-    
-    const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
+      const { data: revenueData } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('type', 'admin_fee');
+      
+      const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
 
-    return {
-      ridesCount: ridesCount || 0,
-      ridersCount: ridersCount || 0,
-      activeRidersCount: activeRidersCount || 0,
-      passengersCount: passengersCount || 0,
-      totalRevenue
-    };
+      return {
+        ridesCount: ridesCount || 0,
+        ridersCount: ridersCount || 0,
+        activeRidersCount: activeRidersCount || 0,
+        passengersCount: passengersCount || 0,
+        totalRevenue
+      };
+    } catch (e) {
+      return { ridesCount: 0, ridersCount: 0, activeRidersCount: 0, passengersCount: 0, totalRevenue: 0 };
+    }
   },
 
   // Authentication
   async login(username: string, password: string, type: UserType): Promise<User | null> {
-    // Custom logic for the admin requested
+    // Admin Override (Hardcoded for prototype access)
     if (type === 'admin' && username === 'adminrabanes' && password === 'rabanes1994') {
         return {
           id: 'admin-fixed',
@@ -64,23 +84,28 @@ export const supabaseService = {
         };
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*, rider_details(*)')
-      .eq('username', username)
-      .eq('user_type', type)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*, rider_details(*)')
+        .eq('username', username)
+        .eq('user_type', type)
+        .single();
 
-    if (error || !data) return null;
-    
-    return {
-      ...data,
-      name: data.full_name,
-    } as User;
+      if (error || !data) return null;
+      
+      return {
+        ...data,
+        name: data.full_name,
+      } as User;
+    } catch (e) {
+      return null;
+    }
   },
 
   async register(data: any, type: UserType) {
-    const { data: profile, error } = await supabase
+    // 1. Create Profile
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .insert({
         username: data.username,
@@ -92,10 +117,14 @@ export const supabaseService = {
       .select()
       .single();
 
-    if (error) throw error;
+    if (profileError) {
+      console.error("Profile creation error:", profileError);
+      throw new Error(`Profile: ${profileError.message} (Code: ${profileError.code})`);
+    }
 
+    // 2. Create Rider Details if applicable
     if (type === 'rider') {
-      await supabase.from('rider_details').insert({
+      const { error: riderError } = await supabase.from('rider_details').insert({
         profile_id: profile.id,
         license_number: data.licenseNumber,
         gov_id: data.governmentLicenseId,
@@ -103,6 +132,11 @@ export const supabaseService = {
         vehicle_model: data.vehicle.model,
         plate_number: data.vehicle.plateNumber
       });
+
+      if (riderError) {
+        console.error("Rider details creation error:", riderError);
+        throw new Error(`Rider Details: ${riderError.message}`);
+      }
     }
 
     return profile;
@@ -172,12 +206,16 @@ export const supabaseService = {
 
   // Emergency
   async getLatestAlert() {
-    const { data } = await supabase
-      .from('emergency_alerts')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1);
-    return data?.[0] || null;
+    try {
+      const { data } = await supabase
+        .from('emergency_alerts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      return data?.[0] || null;
+    } catch (e) {
+      return null;
+    }
   },
 
   async broadcastEmergency(message: string, severity: string) {
