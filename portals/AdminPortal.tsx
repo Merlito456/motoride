@@ -3,14 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Ride, Rider, Passenger, Transaction, LoadRequest } from '../types';
 import { mockBackend } from '../services/mockBackend';
-import { supabaseService } from '../services/supabaseService';
+import { supabaseService, ConnectionStatus } from '../services/supabaseService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Users, Truck, DollarSign, Activity, Download, Star, 
   ShieldAlert, Radio, Zap, TrendingUp, AlertTriangle, 
   CheckCircle2, Search, X, ShieldCheck, MessageSquare, 
   Send, CheckCircle, Bell, Megaphone, Database, Wifi, WifiOff,
-  Cpu, HardDrive, Globe, RefreshCcw, Code, ExternalLink, Info, DatabaseZap
+  Globe, RefreshCcw, ExternalLink, DatabaseZap
 } from 'lucide-react';
 
 const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -30,7 +30,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [emergencySeverity, setEmergencySeverity] = useState<'high' | 'medium' | 'low'>('medium');
 
   // Database status state
-  const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [dbStatus, setDbStatus] = useState<ConnectionStatus>('checking');
   const [realtimeStats, setRealtimeStats] = useState({
     ridesCount: 0,
     ridersCount: 0,
@@ -70,16 +70,16 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const checkDB = async () => {
     setDbStatus('checking');
-    const isOnline = await supabaseService.checkConnection();
-    setDbStatus(isOnline ? 'online' : 'offline');
-    if (isOnline) fetchData();
+    const status = await supabaseService.checkConnectionStatus();
+    setDbStatus(status);
+    if (status === 'online') fetchData();
   };
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     checkDB();
-    const dbInterval = setInterval(checkDB, 20000);
+    const dbInterval = setInterval(checkDB, 30000);
 
     return () => {
       clearInterval(interval);
@@ -177,10 +177,34 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   };
 
   const stats = [
-    { label: 'Total Revenue', value: dbStatus === 'online' ? `₱${realtimeStats.totalRevenue.toFixed(0)}` : `₱${transactions.filter(t => t.type === 'admin_fee').reduce((sum, t) => sum + Math.abs(t.amount), 0).toFixed(0)}`, icon: DollarSign, color: 'from-green-500 to-emerald-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
-    { label: 'Platform Rides', value: dbStatus === 'online' ? realtimeStats.ridesCount : rides.length, icon: Activity, color: 'from-blue-500 to-indigo-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
-    { label: 'Active Fleet', value: dbStatus === 'online' ? realtimeStats.activeRidersCount : riders.filter(r => r.isOnline).length, icon: Truck, color: 'from-yellow-400 to-orange-500', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
-    { label: 'Total Users', value: dbStatus === 'online' ? (realtimeStats.ridersCount + realtimeStats.passengersCount) : (riders.length + passengers.length), icon: Users, color: 'from-purple-500 to-pink-600', trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' },
+    { 
+      label: 'Total Revenue', 
+      value: dbStatus === 'online' ? `₱${realtimeStats.totalRevenue.toFixed(0)}` : `₱${transactions.filter(t => t.type === 'admin_fee').reduce((sum, t) => sum + Math.abs(t.amount), 0).toFixed(0)}`, 
+      icon: DollarSign, 
+      color: 'from-green-500 to-emerald-600', 
+      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
+    },
+    { 
+      label: 'Platform Rides', 
+      value: dbStatus === 'online' ? realtimeStats.ridesCount : rides.length, 
+      icon: Activity, 
+      color: 'from-blue-500 to-indigo-600', 
+      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
+    },
+    { 
+      label: 'Active Fleet', 
+      value: dbStatus === 'online' ? realtimeStats.activeRidersCount : riders.filter(r => r.isOnline).length, 
+      icon: Truck, 
+      color: 'from-yellow-400 to-orange-500', 
+      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
+    },
+    { 
+      label: 'Total Users', 
+      value: dbStatus === 'online' ? (realtimeStats.ridersCount + realtimeStats.passengersCount) : (riders.length + passengers.length), 
+      icon: Users, 
+      color: 'from-purple-500 to-pink-600', 
+      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
+    },
   ];
 
   const chartData = [
@@ -197,23 +221,31 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     <div className="space-y-8 animate-fade-in">
       {/* DB Monitoring Card */}
       <div className={`p-6 rounded-[2.5rem] shadow-xl border transition-all duration-500 flex flex-col md:flex-row items-center gap-8 ${
-        dbStatus === 'online' ? 'bg-white border-green-100' : 'bg-red-50/50 border-red-100'
+        dbStatus === 'online' ? 'bg-white border-green-100' : 
+        dbStatus === 'no_schema' ? 'bg-orange-50 border-orange-100' :
+        'bg-red-50/50 border-red-100'
       }`}>
          <div className="flex items-center gap-6">
             <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg animate-pulse ${
-               dbStatus === 'online' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+               dbStatus === 'online' ? 'bg-green-500 text-white' : 
+               dbStatus === 'no_schema' ? 'bg-orange-400 text-white' :
+               'bg-red-500 text-white'
             }`}>
-               {dbStatus === 'online' ? <Wifi size={32} /> : <WifiOff size={32} />}
+               {dbStatus === 'online' ? <Wifi size={32} /> : 
+                dbStatus === 'no_schema' ? <Database size={32} /> :
+                <WifiOff size={32} />}
             </div>
             <div>
                <div className="flex items-center gap-3">
-                  <h3 className="text-xl font-black italic uppercase tracking-tighter">SUPABASE STATUS: {dbStatus.toUpperCase()}</h3>
+                  <h3 className="text-xl font-black italic uppercase tracking-tighter">
+                    SUPABASE: {dbStatus === 'no_schema' ? 'SCHEMA MISSING' : dbStatus.toUpperCase()}
+                  </h3>
                   {dbStatus === 'checking' && <RefreshCcw size={16} className="animate-spin text-gray-400" />}
                </div>
                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
-                  {dbStatus === 'online' 
-                    ? 'All systems nominal. Streaming real-time data from AWS Region.' 
-                    : 'Connectivity lost or placeholder keys detected. Operating in Local Mock Mode.'}
+                  {dbStatus === 'online' ? 'All systems nominal. Streaming real-time data.' : 
+                   dbStatus === 'no_schema' ? 'Connected to Supabase but tables not found. Run SQL script.' :
+                   'Connectivity lost or placeholder keys detected.'}
                </p>
             </div>
          </div>
@@ -222,44 +254,46 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               onClick={checkDB}
               className="bg-black text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-gray-800 transition-all active:scale-95"
             >
-               <RefreshCcw size={14} /> Re-Verify Connection
+               <RefreshCcw size={14} /> Refresh Connection
             </button>
-            {dbStatus === 'offline' && (
+            {dbStatus !== 'online' && (
               <a 
                 href="https://supabase.com/dashboard" 
                 target="_blank" 
+                rel="noreferrer"
                 className="bg-yellow-400 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-yellow-500 transition-all shadow-lg shadow-yellow-100"
               >
-                 <ExternalLink size={14} /> Configure Database
+                 <ExternalLink size={14} /> Database Console
               </a>
             )}
          </div>
       </div>
 
-      {dbStatus === 'offline' && (
+      {/* Fix: Replace 'offline' with 'prototype' to match ConnectionStatus type */}
+      {(dbStatus === 'prototype' || dbStatus === 'no_schema') && (
         <div className="bg-black text-white p-8 rounded-[3rem] shadow-2xl space-y-6 border border-gray-800 relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/5 rounded-full blur-3xl"></div>
            <div className="flex items-center gap-4 text-yellow-400">
               <DatabaseZap size={24} />
-              <h4 className="text-lg font-black italic uppercase tracking-widest">Setup Guide: Fixing "Invalid API Error"</h4>
+              <h4 className="text-lg font-black italic uppercase tracking-widest">Setup Checklist</h4>
            </div>
-           <p className="text-xs text-gray-400 font-medium">To fix registration errors and sync this dashboard, follow these steps:</p>
+           <p className="text-xs text-gray-400 font-medium">Follow these steps to enable persistent data and resolve registration errors:</p>
            <div className="grid md:grid-cols-3 gap-6">
               {[
-                { step: '01', title: 'Env Variables', desc: 'Set SUPABASE_URL and SUPABASE_ANON_KEY in your deployment environment.' },
-                { step: '02', title: 'Execute SQL', desc: 'Copy the content of database.md and run it in the Supabase SQL Editor.' },
-                { step: '03', title: 'RLS Policies', desc: 'Ensure Profiles and Rides tables allow INSERT/SELECT. (Check database.md updates)' }
+                /* Fix: Use 'prototype' and simplify logic to avoid narrowed type comparison errors */
+                { step: '01', title: 'Environment', desc: 'Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.', status: dbStatus === 'prototype' ? 'pending' : 'done' },
+                { step: '02', title: 'SQL Editor', desc: 'Open database.md, copy the content, and run it in your Supabase SQL Editor.', status: dbStatus === 'no_schema' ? 'pending' : 'waiting' },
+                { step: '03', title: 'Verify RLS', desc: 'Ensure Row Level Security policies allow public registration.', status: 'waiting' }
               ].map((step, i) => (
-                <div key={i} className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-2">
-                   <span className="text-2xl font-black italic text-yellow-400/50">{step.step}</span>
-                   <h5 className="font-black uppercase tracking-tighter text-sm">{step.title}</h5>
+                <div key={i} className={`p-6 rounded-3xl border transition-all ${step.status === 'done' ? 'bg-green-500/10 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                   <div className="flex justify-between items-start mb-2">
+                     <span className={`text-2xl font-black italic ${step.status === 'done' ? 'text-green-500' : 'text-yellow-400/50'}`}>{step.step}</span>
+                     {step.status === 'done' && <CheckCircle size={16} className="text-green-500" />}
+                   </div>
+                   <h5 className="font-black uppercase tracking-tighter text-sm mb-1">{step.title}</h5>
                    <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
                 </div>
               ))}
-           </div>
-           <div className="pt-4 border-t border-white/5 flex items-center gap-2 text-yellow-400">
-              <Info size={14} />
-              <p className="text-[10px] font-black uppercase tracking-widest">Prototype continues to work using Browser Local Storage.</p>
            </div>
         </div>
       )}
@@ -294,7 +328,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                  </div>
               </div>
               <div className="h-[450px] rounded-[2rem] overflow-hidden">
-                 <div id="leaflet-map" ref={mapContainerRef} className="h-full w-full" />
+                 <div id="admin-radar-map" ref={mapContainerRef} className="h-full w-full" />
               </div>
            </div>
         </div>
@@ -476,7 +510,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
                        <Tooltip 
-                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }} 
+                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 'bold' }} 
                        />
                        <Area type="monotone" dataKey="rev" stroke="#22c55e" strokeWidth={4} fill="url(#colorRev)" />
                     </AreaChart>
@@ -540,7 +574,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
            </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden mt-8">
            <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
              <Activity size={24} className="text-indigo-500" /> Recent Platform Activity
            </h3>
@@ -575,7 +609,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   return (
     <div className="max-w-full mx-auto pb-20 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div>
+        <div className="flex flex-col">
            <div className="flex items-center gap-4">
              <h2 className="text-3xl font-black italic tracking-tighter uppercase text-gray-800">COMMAND CENTER</h2>
            </div>
