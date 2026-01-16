@@ -13,7 +13,12 @@ import {
   Globe, RefreshCcw, ExternalLink, DatabaseZap
 } from 'lucide-react';
 
-const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
+interface AdminPortalProps {
+  activeTab: string;
+  dbStatus: ConnectionStatus;
+}
+
+const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
   const [rides, setRides] = useState<Ride[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
@@ -29,8 +34,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [emergencyText, setEmergencyText] = useState('');
   const [emergencySeverity, setEmergencySeverity] = useState<'high' | 'medium' | 'low'>('medium');
 
-  // Database status state
-  const [dbStatus, setDbStatus] = useState<ConnectionStatus>('checking');
   const [realtimeStats, setRealtimeStats] = useState({
     ridesCount: 0,
     ridersCount: 0,
@@ -45,46 +48,48 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
-    // Local mock data sync for UI prototype
-    setRides(mockBackend.getRides());
-    setRiders(mockBackend.getRiders());
-    setPassengers(mockBackend.getPassengers());
-    setTransactions(mockBackend.getTransactions());
-    setLoadRequests(mockBackend.getLoadRequests());
-
-    if (activeSupportRequest) {
-      const updated = mockBackend.getLoadRequests().find(r => r.id === activeSupportRequest.id);
-      if (updated) setActiveSupportRequest(updated);
-    }
-
-    // Try to fetch real stats if DB is online
     if (dbStatus === 'online') {
       try {
-        const stats = await supabaseService.getDashboardStats();
+        const [rdr, pas, rds, txs, lrs, stats] = await Promise.all([
+          supabaseService.getAllRiders(),
+          supabaseService.getAllPassengers(),
+          supabaseService.getAllRides(),
+          supabaseService.getAllTransactions(),
+          supabaseService.getAllLoadRequests(),
+          supabaseService.getDashboardStats()
+        ]);
+        setRiders(rdr);
+        setPassengers(pas);
+        setRides(rds);
+        setTransactions(txs);
+        setLoadRequests(lrs);
         setRealtimeStats(stats);
+        
+        if (activeSupportRequest) {
+          const updated = lrs.find(r => r.id === activeSupportRequest.id);
+          if (updated) setActiveSupportRequest(updated);
+        }
       } catch (e) {
-        console.warn("Failed to fetch real-time stats", e);
+        console.warn("Failed to fetch live admin data", e);
+      }
+    } else {
+      setRides(mockBackend.getRides());
+      setRiders(mockBackend.getRiders());
+      setPassengers(mockBackend.getPassengers());
+      setTransactions(mockBackend.getTransactions());
+      setLoadRequests(mockBackend.getLoadRequests());
+
+      if (activeSupportRequest) {
+        const updated = mockBackend.getLoadRequests().find(r => r.id === activeSupportRequest.id);
+        if (updated) setActiveSupportRequest(updated);
       }
     }
-  };
-
-  const checkDB = async () => {
-    setDbStatus('checking');
-    const status = await supabaseService.checkConnectionStatus();
-    setDbStatus(status);
-    if (status === 'online') fetchData();
   };
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 5000);
-    checkDB();
-    const dbInterval = setInterval(checkDB, 30000);
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(dbInterval);
-    };
+    return () => clearInterval(interval);
   }, [activeSupportRequest?.id, dbStatus]);
 
   useEffect(() => {
@@ -171,6 +176,9 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const handleBroadcastEmergency = () => {
     if (!emergencyText.trim()) return;
+    if (dbStatus === 'online') {
+      supabaseService.sendEmergencyAlert(emergencyText, emergencySeverity);
+    }
     mockBackend.sendEmergency(emergencyText, emergencySeverity);
     setEmergencyText('');
     setShowEmergencyModal(false);
@@ -219,17 +227,16 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const renderDashboard = () => (
     <div className="space-y-8 animate-fade-in">
-      {/* DB Monitoring Card */}
       <div className={`p-6 rounded-[2.5rem] shadow-xl border transition-all duration-500 flex flex-col md:flex-row items-center gap-8 ${
         dbStatus === 'online' ? 'bg-white border-green-100' : 
         dbStatus === 'no_schema' ? 'bg-orange-50 border-orange-100' :
         'bg-red-50/50 border-red-100'
       }`}>
          <div className="flex items-center gap-6">
-            <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg animate-pulse ${
+            <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${
                dbStatus === 'online' ? 'bg-green-500 text-white' : 
                dbStatus === 'no_schema' ? 'bg-orange-400 text-white' :
-               'bg-red-500 text-white'
+               'bg-red-500 text-white animate-pulse'
             }`}>
                {dbStatus === 'online' ? <Wifi size={32} /> : 
                 dbStatus === 'no_schema' ? <Database size={32} /> :
@@ -240,22 +247,15 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <h3 className="text-xl font-black italic uppercase tracking-tighter">
                     SUPABASE: {dbStatus === 'no_schema' ? 'SCHEMA MISSING' : dbStatus.toUpperCase()}
                   </h3>
-                  {dbStatus === 'checking' && <RefreshCcw size={16} className="animate-spin text-gray-400" />}
                </div>
                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
                   {dbStatus === 'online' ? 'All systems nominal. Streaming real-time data.' : 
-                   dbStatus === 'no_schema' ? 'Connected to Supabase but tables not found. Run SQL script.' :
-                   'Connectivity lost or placeholder keys detected.'}
+                   dbStatus === 'no_schema' ? 'Connected but tables missing. Run SQL script.' :
+                   'Connectivity restricted. Operating in prototype mode.'}
                </p>
             </div>
          </div>
          <div className="flex-1 flex justify-end gap-3 w-full md:w-auto">
-            <button 
-              onClick={checkDB}
-              className="bg-black text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-gray-800 transition-all active:scale-95"
-            >
-               <RefreshCcw size={14} /> Refresh Connection
-            </button>
             {dbStatus !== 'online' && (
               <a 
                 href="https://supabase.com/dashboard" 
@@ -268,35 +268,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             )}
          </div>
       </div>
-
-      {/* Fix: Replace 'offline' with 'prototype' to match ConnectionStatus type */}
-      {(dbStatus === 'prototype' || dbStatus === 'no_schema') && (
-        <div className="bg-black text-white p-8 rounded-[3rem] shadow-2xl space-y-6 border border-gray-800 relative overflow-hidden">
-           <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/5 rounded-full blur-3xl"></div>
-           <div className="flex items-center gap-4 text-yellow-400">
-              <DatabaseZap size={24} />
-              <h4 className="text-lg font-black italic uppercase tracking-widest">Setup Checklist</h4>
-           </div>
-           <p className="text-xs text-gray-400 font-medium">Follow these steps to enable persistent data and resolve registration errors:</p>
-           <div className="grid md:grid-cols-3 gap-6">
-              {[
-                /* Fix: Use 'prototype' and simplify logic to avoid narrowed type comparison errors */
-                { step: '01', title: 'Environment', desc: 'Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.', status: dbStatus === 'prototype' ? 'pending' : 'done' },
-                { step: '02', title: 'SQL Editor', desc: 'Open database.md, copy the content, and run it in your Supabase SQL Editor.', status: dbStatus === 'no_schema' ? 'pending' : 'waiting' },
-                { step: '03', title: 'Verify RLS', desc: 'Ensure Row Level Security policies allow public registration.', status: 'waiting' }
-              ].map((step, i) => (
-                <div key={i} className={`p-6 rounded-3xl border transition-all ${step.status === 'done' ? 'bg-green-500/10 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
-                   <div className="flex justify-between items-start mb-2">
-                     <span className={`text-2xl font-black italic ${step.status === 'done' ? 'text-green-500' : 'text-yellow-400/50'}`}>{step.step}</span>
-                     {step.status === 'done' && <CheckCircle size={16} className="text-green-500" />}
-                   </div>
-                   <h5 className="font-black uppercase tracking-tighter text-sm mb-1">{step.title}</h5>
-                   <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
-                </div>
-              ))}
-           </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => (
@@ -341,11 +312,11 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                  </div>
                  <h3 className="text-sm font-black italic uppercase tracking-widest">Live Ledger</h3>
               </div>
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+              <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
            </div>
            
            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide max-h-[400px]">
-              {transactions.slice(-8).reverse().map(tx => (
+              {transactions.slice(-10).reverse().map(tx => (
                 <div key={tx.id} className="flex gap-4 group animate-fade-in">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/5 border border-white/10 group-hover:bg-white/10 transition-colors`}>
                     <DollarSign size={16} className="text-yellow-400" />
@@ -492,7 +463,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     return (
       <div className="space-y-8 animate-fade-in relative">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-           {/* Revenue Chart */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
               <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
                 <TrendingUp size={24} className="text-green-500" /> Revenue Velocity
@@ -518,7 +488,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
            </div>
 
-           {/* Support Queue */}
            <div className="bg-black p-8 rounded-[2.5rem] shadow-2xl text-white overflow-hidden flex flex-col h-full border border-gray-800">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-black italic uppercase tracking-tighter text-yellow-400 flex items-center gap-3">
@@ -579,13 +548,13 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
              <Activity size={24} className="text-indigo-500" /> Recent Platform Activity
            </h3>
            <div className="space-y-4">
-              {rides.slice(-8).reverse().map(ride => (
+              {rides.slice(-10).map(ride => (
                 <div key={ride.id} className="flex items-center justify-between p-5 bg-gray-50 rounded-3xl border border-gray-100 hover:bg-white hover:shadow-lg transition-all">
                    <div className="flex items-center gap-5">
                       <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center text-yellow-400 font-black italic shadow-lg">M</div>
                       <div>
                          <div className="flex items-center gap-2 mb-1">
-                            <p className="text-xs font-black uppercase tracking-tight">Mission {ride.id.substring(5, 10)}</p>
+                            <p className="text-xs font-black uppercase tracking-tight">Mission {ride.id.substring(0, 5)}</p>
                             <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
                               ride.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
                             }`}>{ride.status}</span>
@@ -612,6 +581,7 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         <div className="flex flex-col">
            <div className="flex items-center gap-4">
              <h2 className="text-3xl font-black italic tracking-tighter uppercase text-gray-800">COMMAND CENTER</h2>
+             {dbStatus === 'online' && <span className="flex items-center gap-1.5 bg-green-50 text-green-600 px-3 py-1 rounded-full text-[10px] font-black uppercase"><Globe size={12}/> LIVE SYNC</span>}
            </div>
            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Real-time Platform Orchestration</p>
         </div>
@@ -632,7 +602,6 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       {activeTab === 'users' && renderUsers()}
       {activeTab === 'reports' && renderReports()}
 
-      {/* Emergency Modal */}
       {showEmergencyModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
@@ -642,123 +611,66 @@ const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
               <div>
                 <h3 className="text-xl font-black italic uppercase tracking-tighter">Emergency Broadcast</h3>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Alert all riders and passengers</p>
               </div>
               <button onClick={() => setShowEmergencyModal(false)} className="ml-auto text-white/60 hover:text-white">
                 <X size={24} />
               </button>
             </div>
             <div className="p-8 space-y-6">
-              <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Broadcast Message</label>
-                 <textarea 
+              <textarea 
                   value={emergencyText}
                   onChange={(e) => setEmergencyText(e.target.value)}
-                  placeholder="e.g. System undergoing emergency maintenance. Please conclude active rides."
-                  className="w-full h-32 bg-gray-50 border border-gray-100 rounded-2xl p-4 font-bold text-sm focus:outline-none focus:ring-4 focus:ring-red-500/10"
-                 />
+                  placeholder="Broadcast message..."
+                  className="w-full h-32 bg-gray-50 border border-gray-100 rounded-2xl p-4 font-bold text-sm focus:outline-none"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                  {(['low', 'medium', 'high'] as const).map(sev => (
+                    <button key={sev} onClick={() => setEmergencySeverity(sev)} className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${emergencySeverity === sev ? 'bg-black text-white border-black' : 'bg-white text-gray-400'}`}>{sev}</button>
+                  ))}
               </div>
-              <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Severity Level</label>
-                 <div className="grid grid-cols-3 gap-3">
-                    {(['low', 'medium', 'high'] as const).map(sev => (
-                      <button 
-                        key={sev}
-                        onClick={() => setEmergencySeverity(sev)}
-                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                          emergencySeverity === sev 
-                          ? 'bg-black text-white border-black shadow-lg scale-105' 
-                          : 'bg-white text-gray-400 border-gray-100 hover:border-gray-200'
-                        }`}
-                      >
-                        {sev}
-                      </button>
-                    ))}
-                 </div>
-              </div>
-              <div className="flex gap-4 pt-4">
-                 <button 
-                   onClick={handleBroadcastEmergency}
-                   className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-red-100 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs"
-                 >
-                   <Megaphone size={18} /> Send Broadcast
-                 </button>
-              </div>
+              <button onClick={handleBroadcastEmergency} className="w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Send Broadcast</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Support Chat Overlay */}
       {activeSupportRequest && (
         <div className="fixed bottom-0 right-0 left-0 md:left-64 z-[100] p-4 pointer-events-none">
           <div className="bg-white rounded-[3rem] shadow-2xl border-4 border-black overflow-hidden flex flex-col h-[550px] animate-slide-up pointer-events-auto max-w-4xl mx-auto">
             <div className="bg-black p-6 flex items-center justify-between text-white">
               <div className="flex items-center gap-5">
-                <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-black shadow-xl rotate-3">
+                <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-black">
                    <Users size={28} />
                 </div>
                 <div>
                    <h3 className="text-lg font-black italic uppercase tracking-widest text-yellow-400">MISSION CONTROL SUPPORT</h3>
-                   <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">RIDER: {riders.find(r => r.id === activeSupportRequest.riderId)?.name}</span>
-                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                   </div>
                 </div>
               </div>
               <div className="flex gap-3">
-                 <button 
-                  onClick={() => approveRequest(activeSupportRequest)}
-                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl shadow-green-200 transition-all active:scale-95"
-                 >
-                   <CheckCircle size={18} /> Approve Load
-                 </button>
-                 <button onClick={() => setActiveSupportRequest(null)} className="bg-white/10 hover:bg-red-500 text-white p-3 rounded-2xl transition-all">
-                   <X size={24} />
-                 </button>
+                 <button onClick={() => approveRequest(activeSupportRequest)} className="bg-green-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase">Approve Load</button>
+                 <button onClick={() => setActiveSupportRequest(null)} className="bg-white/10 p-3 rounded-2xl"><X size={24} /></button>
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-gray-50/50 backdrop-blur-md">
-               {activeSupportRequest.messages.length === 0 ? (
-                 <div className="py-20 text-center opacity-30 italic">Start the conversation...</div>
-               ) : (
-                 activeSupportRequest.messages.map(msg => (
-                   <div key={msg.id} className={`flex ${msg.senderId === 'admin' ? 'justify-end' : 'justify-start'}`}>
-                     <div className={`max-w-[65%] p-5 rounded-[2rem] shadow-xl text-sm font-bold animate-fade-in ${
-                       msg.senderId === 'admin' ? 'bg-black text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
-                     }`}>
-                       {msg.text}
-                       <div className={`flex items-center gap-2 mt-3 pt-2 border-t ${msg.senderId === 'admin' ? 'border-white/10' : 'border-gray-50'}`}>
-                          <p className={`text-[8px] font-black uppercase tracking-widest ${msg.senderId === 'admin' ? 'text-gray-400' : 'text-gray-400'}`}>
-                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                          <CheckCircle2 size={10} className={msg.senderId === 'admin' ? 'text-yellow-400' : 'text-green-500'} />
-                       </div>
-                     </div>
-                   </div>
-                 ))
-               )}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-gray-50/50">
+               {activeSupportRequest.messages.map(msg => (
+                 <div key={msg.id} className={`flex ${msg.senderId === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                   <div className={`max-w-[65%] p-5 rounded-[2rem] shadow-xl text-sm font-bold ${msg.senderId === 'admin' ? 'bg-black text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.text}</div>
+                 </div>
+               ))}
                <div ref={chatEndRef} />
             </div>
 
-            <div className="p-4 bg-white border-t border-gray-100 flex gap-4">
-               <div className="flex-1 relative">
+            <div className="p-4 bg-white border-t flex gap-4">
                  <input 
                    type="text" 
                    value={supportMessage}
                    onChange={(e) => setSupportMessage(e.target.value)}
-                   placeholder="Type payment instructions or approval details..."
-                   className="w-full bg-gray-100 border border-gray-100 rounded-[2rem] pl-8 pr-16 py-5 font-black text-sm focus:outline-none focus:ring-4 focus:ring-yellow-400/20 transition-all shadow-inner"
+                   placeholder="Reply..."
+                   className="w-full bg-gray-100 border rounded-[2rem] px-8 py-5 font-black text-sm outline-none"
                    onKeyPress={(e) => e.key === 'Enter' && sendSupportMessage()}
                  />
-                 <button 
-                   onClick={sendSupportMessage}
-                   className="absolute right-3 top-1/2 -translate-y-1/2 bg-black text-yellow-400 p-3 rounded-full hover:bg-gray-900 transition-all flex items-center justify-center shadow-lg active:scale-90"
-                 >
-                   <Send size={20} />
-                 </button>
-               </div>
+                 <button onClick={sendSupportMessage} className="bg-black text-yellow-400 p-3 rounded-full"><Send size={20} /></button>
             </div>
           </div>
         </div>
