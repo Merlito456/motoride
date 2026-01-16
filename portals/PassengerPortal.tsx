@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Passenger, Ride, RideStatus, Coordinates, Bid, Transaction, SavedLocation } from '../types';
@@ -47,9 +46,10 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
+    // FIX: Removed 'tap: false' which is not part of modern Leaflet MapOptions types
     mapRef.current = L.map(mapContainerRef.current, {
       zoomControl: false,
-      attributionControl: false
+      attributionControl: false,
     }).setView([14.5995, 120.9842], 12);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -133,6 +133,45 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
     const interval = setInterval(fetchActiveRide, 2000);
     return () => clearInterval(interval);
   }, [user.id, dbStatus]);
+
+  // FIXED: Robust Map Click Listener for Pinning
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const onMapClick = (e: L.LeafletMouseEvent) => {
+      // If not in selection mode, ignore clicks
+      if (!selectionMode) return;
+
+      const newCoord: Coordinates = {
+        latitude: e.latlng.lat,
+        longitude: e.latlng.lng,
+        placeName: selectionMode === 'pickup' ? 'Pinned Pickup' : 'Pinned Destination',
+        address: `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`
+      };
+
+      if (selectionMode === 'pickup') {
+        setPickup(newCoord);
+      } else {
+        setDestination(newCoord);
+      }
+      
+      setSelectionMode(null);
+    };
+
+    if (selectionMode) {
+      mapRef.current.on('click', onMapClick);
+      // Change cursor to crosshair when selecting
+      const mapContainer = mapRef.current.getContainer();
+      mapContainer.style.cursor = 'crosshair';
+    } else {
+      const mapContainer = mapRef.current?.getContainer();
+      if (mapContainer) mapContainer.style.cursor = '';
+    }
+
+    return () => {
+      mapRef.current?.off('click', onMapClick);
+    };
+  }, [selectionMode]);
 
   const handleBookRide = async () => {
     if (!pickup || !destination) return;
@@ -346,15 +385,17 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
   const assignedRider = activeRide?.riderId ? mockBackend.getRiders().find(r => r.id === activeRide.riderId) : null;
 
   return (
-    <div className="relative w-full h-[calc(100vh-10rem)] rounded-3xl overflow-hidden bg-gray-200 border-4 border-white shadow-2xl">
-      <div id="leaflet-map" ref={mapContainerRef} className="absolute inset-0 z-0 h-full w-full" />
+    <div className={`relative w-full h-[calc(100vh-10rem)] rounded-3xl overflow-hidden bg-gray-200 border-4 shadow-2xl transition-all duration-300 ${selectionMode ? 'border-yellow-400 ring-4 ring-yellow-400/20' : 'border-white'}`}>
+      {/* Increased map z-index to z-10 */}
+      <div id="leaflet-map" ref={mapContainerRef} className="absolute inset-0 z-10 h-full w-full" />
 
       {activeTab === 'history' && renderHistory()}
 
       {!selectionMode && activeTab === 'home' && (
         <>
           {!activeRide ? (
-            <div className="absolute inset-0 z-10 pointer-events-none p-4 flex flex-col justify-between">
+            /* Overlays start at z-20 */
+            <div className="absolute inset-0 z-20 pointer-events-none p-4 flex flex-col justify-between">
               <div className="w-full max-w-sm pointer-events-auto">
                 <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
                   <div className="bg-yellow-400 px-4 py-2 flex items-center justify-between">
@@ -409,7 +450,7 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2 pointer-events-auto">
-                  <div onClick={() => useCurrentLocation(false)} className="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-xl border cursor-pointer"><LocateFixed size={20} className={isLocating ? 'animate-spin' : ''} /></div>
+                  <div onClick={() => useCurrentLocation(false)} className="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-xl border cursor-pointer hover:bg-white"><LocateFixed size={20} className={isLocating ? 'animate-spin' : ''} /></div>
               </div>
             </div>
           ) : (
@@ -510,11 +551,11 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
       )}
 
       {selectionMode && (
-        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-between p-6 bg-black/10">
-          <button onClick={() => setSelectionMode(null)} className="pointer-events-auto self-start bg-white p-3 rounded-2xl shadow-2xl"><ArrowLeft size={20} /></button>
-          <div className="bg-black text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/20 animate-pulse">
-            <MousePointer2 size={16} className="text-yellow-400" />
-            <span className="text-sm font-black uppercase">Select {selectionMode} on Map</span>
+        <div className="absolute inset-0 z-50 pointer-events-none flex flex-col items-center justify-between p-6 bg-black/5 animate-fade-in">
+          <button onClick={() => setSelectionMode(null)} className="pointer-events-auto self-start bg-white p-4 rounded-[2rem] shadow-2xl hover:bg-gray-50 transition-colors border border-gray-100"><ArrowLeft size={24} /></button>
+          <div className="bg-yellow-400 text-black px-8 py-4 rounded-[2rem] shadow-2xl flex items-center gap-4 border-2 border-white animate-bounce pointer-events-auto cursor-default">
+            <MousePointer2 size={20} className="animate-pulse" />
+            <span className="text-sm font-black uppercase tracking-widest italic">TAP MAP TO SET {selectionMode}</span>
           </div>
         </div>
       )}
