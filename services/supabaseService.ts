@@ -6,6 +6,10 @@ export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking'
 
 export const supabaseService = {
   async checkConnectionStatus(): Promise<ConnectionStatus> {
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout')), 3000)
+    );
+
     try {
       const client = supabase as any;
       const supabaseUrl = client.supabaseUrl;
@@ -16,15 +20,19 @@ export const supabaseService = {
         return 'prototype';
       }
 
-      // Test connectivity
-      const { error } = await supabase.from('profiles').select('id').limit(1);
+      // Test connectivity with a timeout
+      const fetchPromise = supabase.from('profiles').select('id').limit(1);
+      const result = await Promise.race([fetchPromise, timeoutPromise]);
+      const { error } = result as any;
       
       if (error) {
+        // PostgREST error 42P01 means table does not exist
         if (error.code === '42P01') return 'no_schema';
         return 'prototype';
       }
       return 'online';
     } catch (e) {
+      console.warn("Supabase connection check failed or timed out:", e);
       return 'prototype';
     }
   },
@@ -115,7 +123,11 @@ export const supabaseService = {
   },
 
   async getLatestAlert() {
-    const { data } = await supabase.from('emergency_alerts').select('*').order('created_at', { ascending: false }).limit(1);
-    return data?.[0] || null;
+    try {
+      const { data } = await supabase.from('emergency_alerts').select('*').order('created_at', { ascending: false }).limit(1);
+      return data?.[0] || null;
+    } catch {
+      return null;
+    }
   }
 };
