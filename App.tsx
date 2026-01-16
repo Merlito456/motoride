@@ -13,7 +13,7 @@ import {
   UserPlus, ArrowLeft, Bike, Star, Info, CheckCircle,
   MapPin, Heart, FileText, Lock, AlertCircle, Database, HelpCircle, 
   ChevronDown, MousePointer2, Globe, LayoutDashboard, Truck, Wallet,
-  TrendingUp, Award, Rocket, CheckCircle2, Shield
+  TrendingUp, Award, Rocket, CheckCircle2, Shield, Terminal
 } from 'lucide-react';
 
 type LandingView = 'landing' | 'login' | 'register' | 'safety' | 'pricing' | 'areas' | 'mission' | 'privacy' | 'terms';
@@ -45,7 +45,6 @@ const App: React.FC = () => {
     let mounted = true;
 
     const initializeApp = async () => {
-        // Safety timeout: If initialization takes > 3s, force start the app in prototype mode
         const safetyTimer = setTimeout(() => {
           if (mounted && !isInitialized) {
             setDbStatus('prototype');
@@ -95,7 +94,7 @@ const App: React.FC = () => {
           setCurrentUser(mockUser);
           setActiveTab(mockUser.userType === 'admin' ? 'dashboard' : 'home');
         } else {
-          setError('Invalid credentials. Check username/password or portal type.');
+          setError(`Invalid credentials. Authentication failed for ${authRole} portal.`);
         }
     } catch (err: any) {
         setError(err.message || 'Login failed.');
@@ -159,6 +158,13 @@ const App: React.FC = () => {
     setError('');
   };
 
+  const triggerAdminLogin = () => {
+    resetForms();
+    setAuthRole('admin');
+    setView('login');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (!isInitialized) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-black text-yellow-400 gap-6">
         <div className="relative">
@@ -187,7 +193,7 @@ const App: React.FC = () => {
               <h1 className="text-2xl font-black italic tracking-tighter">MOTORIDE</h1>
            </div>
            <div className="flex items-center gap-6">
-              <button onClick={() => { setView('login'); resetForms(); }} className="text-xs font-black uppercase tracking-widest text-gray-800 hover:text-yellow-600 transition-colors">Login</button>
+              <button onClick={() => { setView('login'); setAuthRole('passenger'); resetForms(); }} className="text-xs font-black uppercase tracking-widest text-gray-800 hover:text-yellow-600 transition-colors">Login</button>
               <button onClick={() => { setView('register'); setAuthRole('passenger'); resetForms(); }} className="bg-black text-white px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg shadow-gray-200">Get Started</button>
            </div>
         </nav>
@@ -323,21 +329,35 @@ const App: React.FC = () => {
         {(view === 'login' || view === 'register') && (
           <div className="min-h-screen flex items-center justify-center p-8 bg-gray-50 pt-28">
             <div className="w-full max-w-xl bg-white rounded-[4rem] shadow-2xl border border-white overflow-hidden relative">
-               <div className="bg-black p-10 text-white flex justify-between items-center">
+               <div className={`p-10 text-white flex justify-between items-center transition-colors ${authRole === 'admin' ? 'bg-indigo-900' : 'bg-black'}`}>
                   <div>
                     <button onClick={() => setView('landing')} className="text-[10px] font-black text-gray-400 hover:text-white flex items-center gap-2 mb-4 tracking-widest"><ArrowLeft size={14}/> BACK TO HOME</button>
-                    <h2 className="text-4xl font-black italic tracking-tighter uppercase">{view === 'login' ? 'Login' : 'Create Account'}</h2>
+                    <h2 className="text-4xl font-black italic tracking-tighter uppercase">
+                      {authRole === 'admin' ? 'Elevated Access' : view === 'login' ? 'Login' : 'Create Account'}
+                    </h2>
                   </div>
-                  <div className="w-20 h-20 bg-yellow-400 rounded-3xl flex items-center justify-center text-black rotate-6 shadow-xl"><UserIcon size={40} /></div>
+                  <div className={`w-20 h-20 rounded-3xl flex items-center justify-center text-black rotate-6 shadow-xl ${authRole === 'admin' ? 'bg-indigo-400' : 'bg-yellow-400'}`}>
+                    {authRole === 'admin' ? <Terminal size={40} /> : <UserIcon size={40} />}
+                  </div>
                </div>
 
                <div className="p-12 space-y-8">
                   <form onSubmit={view === 'login' ? handleLogin : handleRegister} className="space-y-6">
-                     <div className="flex bg-gray-100 p-1.5 rounded-[2rem] border border-gray-200">
-                        {(view === 'register' ? ['passenger', 'rider'] : ['passenger', 'rider', 'admin']).map(role => (
-                          <button key={role} type="button" onClick={() => setAuthRole(role as any)} className={`flex-1 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${authRole === role ? 'bg-black text-white shadow-xl' : 'text-gray-400 hover:text-black'}`}>{role}</button>
-                        ))}
-                     </div>
+                     {/* Public Role Selector (Only Passenger & Rider) */}
+                     {authRole !== 'admin' && (
+                       <div className="flex bg-gray-100 p-1.5 rounded-[2rem] border border-gray-200">
+                          {['passenger', 'rider'].map(role => (
+                            <button key={role} type="button" onClick={() => setAuthRole(role as any)} className={`flex-1 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${authRole === role ? 'bg-black text-white shadow-xl' : 'text-gray-400 hover:text-black'}`}>{role}</button>
+                          ))}
+                       </div>
+                     )}
+
+                     {authRole === 'admin' && (
+                       <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-3">
+                          <Shield size={20} className="text-indigo-600" />
+                          <p className="text-[10px] font-black uppercase text-indigo-700 tracking-widest">Administrator Node Authentication Required</p>
+                       </div>
+                     )}
 
                      {error && <div className="bg-red-50 text-red-600 p-5 rounded-3xl text-xs font-bold flex items-center gap-3 border border-red-100 animate-shake"><ShieldAlert size={20}/> {error}</div>}
 
@@ -372,8 +392,8 @@ const App: React.FC = () => {
                        </div>
                      )}
 
-                     <button type="submit" disabled={loading} className="w-full bg-black text-white py-6 rounded-[2rem] font-black italic text-xl uppercase shadow-2xl shadow-black/30 hover:bg-gray-900 active:scale-95 transition-all mt-4">
-                       {loading ? 'Validating...' : view === 'login' ? 'Proceed to Portal' : 'Register Profile'}
+                     <button type="submit" disabled={loading} className={`w-full py-6 rounded-[2rem] font-black italic text-xl uppercase shadow-2xl transition-all mt-4 active:scale-95 ${authRole === 'admin' ? 'bg-indigo-900 text-white shadow-indigo-900/30' : 'bg-black text-white shadow-black/30 hover:bg-gray-900'}`}>
+                       {loading ? 'Validating...' : authRole === 'admin' ? 'Enter Command Center' : view === 'login' ? 'Proceed to Portal' : 'Register Profile'}
                      </button>
                   </form>
                </div>
@@ -386,6 +406,22 @@ const App: React.FC = () => {
               <div className="col-span-1 md:col-span-2 space-y-6">
                  <h1 className="text-3xl font-black italic tracking-tighter">MOTORIDE</h1>
                  <p className="text-gray-400 text-lg max-w-sm font-medium">Re-engineering urban transit in the Philippines with uncompromising safety and fairness.</p>
+              </div>
+              <div className="space-y-4">
+                 <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Company</h4>
+                 <ul className="text-sm font-bold text-gray-600 space-y-3">
+                    <li className="hover:text-yellow-600 cursor-pointer">Safety Guidelines</li>
+                    <li className="hover:text-yellow-600 cursor-pointer">Fare Calculator</li>
+                    <li className="hover:text-yellow-600 cursor-pointer">Service Map</li>
+                 </ul>
+              </div>
+              <div className="space-y-4">
+                 <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Systems</h4>
+                 <ul className="text-sm font-bold text-gray-600 space-y-3">
+                    <li onClick={triggerAdminLogin} className="hover:text-black cursor-pointer flex items-center gap-2 font-black italic uppercase tracking-tighter text-xs group">
+                       <LayoutDashboard size={14} className="group-hover:text-indigo-600" /> Access Command Center
+                    </li>
+                 </ul>
               </div>
            </div>
            <div className="max-w-7xl mx-auto pt-16 border-t border-gray-200 mt-16 flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-gray-400">
