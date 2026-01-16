@@ -4,6 +4,34 @@ import { User, Passenger, Rider, Ride, Bid, Transaction, LoadRequest, SavedLocat
 
 export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking';
 
+// Helper to convert DB snake_case to App camelCase
+const mapRideFromDB = (dbRide: any): Ride => ({
+  id: dbRide.id,
+  passengerId: dbRide.passenger_id,
+  riderId: dbRide.rider_id,
+  pickupLocation: {
+    latitude: dbRide.pickup_lat,
+    longitude: dbRide.pickup_lng,
+    placeName: dbRide.pickup_name
+  },
+  destination: {
+    latitude: dbRide.dest_lat,
+    longitude: dbRide.dest_lng,
+    placeName: dbRide.dest_name
+  },
+  distance: dbRide.distance,
+  baseFare: Number(dbRide.base_fare),
+  adminFee: Number(dbRide.admin_fee),
+  totalFare: Number(dbRide.total_fare),
+  status: dbRide.status,
+  biddingEnabled: dbRide.bidding_enabled,
+  paymentMethod: dbRide.payment_method,
+  paymentStatus: dbRide.payment_status,
+  createdAt: dbRide.created_at,
+  estimatedDuration: Math.round(dbRide.distance * 2.5),
+  bids: [] // Bids are usually fetched separately or via join
+});
+
 export const supabaseService = {
   async checkConnectionStatus(): Promise<ConnectionStatus> {
     const timeoutPromise = new Promise<never>((_, reject) => 
@@ -12,99 +40,46 @@ export const supabaseService = {
 
     try {
       const client = supabase as any;
-      const supabaseUrl = client.supabaseUrl;
       const supabaseKey = client.supabaseKey;
 
-      // IMMEDIATE CHECK: If keys are placeholders, don't even try to fetch
-      if (!supabaseKey || supabaseKey === 'your-anon-key' || supabaseUrl.includes('your-project')) {
+      if (!supabaseKey || supabaseKey === 'your-anon-key') {
         return 'prototype';
       }
 
-      // Test connectivity with a short timeout
       const fetchPromise = supabase.from('profiles').select('id').limit(1);
       const result = await Promise.race([fetchPromise, timeoutPromise]);
       const { error } = result as any;
       
       if (error) {
-        // PostgREST error 42P01 means table does not exist
         if (error.code === '42P01') return 'no_schema';
         return 'prototype';
       }
       return 'online';
     } catch (e) {
-      console.warn("Supabase connection check failed or timed out:", e);
       return 'prototype';
     }
   },
 
-  async getDashboardStats() {
-    try {
-      const [
-        { count: ridesCount },
-        { count: ridersCount },
-        { count: activeRidersCount },
-        { count: passengersCount }
-      ] = await Promise.all([
-        supabase.from('rides').select('*', { count: 'exact', head: true }),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'rider'),
-        supabase.from('rider_details').select('*', { count: 'exact', head: true }).eq('is_online', true),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
-      ]);
-
-      const { data: revenueData } = await supabase.from('transactions').select('amount').eq('type', 'admin_fee');
-      const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
-
-      return {
-        ridesCount: ridesCount || 0,
-        ridersCount: ridersCount || 0,
-        activeRidersCount: activeRidersCount || 0,
-        passengersCount: passengersCount || 0,
-        totalRevenue
-      };
-    } catch (e) {
-      return { ridesCount: 0, ridersCount: 0, activeRidersCount: 0, passengersCount: 0, totalRevenue: 0 };
-    }
-  },
-
+  // AUTH METHODS
   async login(username: string, password: string, type: UserType): Promise<User | null> {
     if (type === 'admin' && username === 'admin' && password === 'admin') {
-      return {
-        id: 'admin-fixed',
-        username: 'admin',
-        name: 'System Admin',
-        phone: '000',
-        userType: 'admin',
-        createdAt: new Date().toISOString(),
-        isActive: true
-      };
+      return { id: 'admin-fixed', username: 'admin', name: 'System Admin', phone: '000', userType: 'admin', createdAt: new Date().toISOString(), isActive: true };
     }
-
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*, rider_details(*)')
-        .eq('username', username)
-        .eq('user_type', type)
-        .single();
-
+      const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('username', username).eq('user_type', type).single();
       if (error || !data) return null;
       return { ...data, name: data.full_name, userType: data.user_type } as User;
-    } catch (e) {
-      return null;
-    }
+    } catch { return null; }
   },
 
   async register(data: any, type: UserType) {
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        username: data.username,
-        full_name: data.name,
-        phone: data.phone,
-        user_type: type,
-        balance: 0
-      })
-      .select().single();
+    const { data: profile, error: profileError } = await supabase.from('profiles').insert({
+      username: data.username,
+      full_name: data.name,
+      phone: data.phone,
+      user_type: type,
+      balance: 0
+    }).select().single();
 
     if (profileError) throw profileError;
 
@@ -118,16 +93,72 @@ export const supabaseService = {
         plate_number: data.vehicle.plateNumber
       });
     }
-
     return { ...profile, name: profile.full_name, userType: profile.user_type };
+  },
+
+  // RIDE METHODS
+  async getAvailableRides(): Promise<Ride[]> {
+    const { data, error } = await supabase.from('rides').select('*').eq('status', 'pending');
+    if (error || !data) return [];
+    return data.map(mapRideFromDB);
+  },
+
+  async createRide(ride: Partial<Ride>): Promise<Ride | null> {
+    const { data, error } = await supabase.from('rides').insert({
+      passenger_id: ride.passengerId,
+      pickup_lat: ride.pickupLocation?.latitude,
+      pickup_lng: ride.pickupLocation?.longitude,
+      pickup_name: ride.pickupLocation?.placeName,
+      dest_lat: ride.destination?.latitude,
+      dest_lng: ride.destination?.longitude,
+      dest_name: ride.destination?.placeName,
+      distance: ride.distance,
+      base_fare: ride.baseFare,
+      total_fare: ride.totalFare,
+      bidding_enabled: ride.biddingEnabled,
+      status: 'pending'
+    }).select().single();
+
+    if (error || !data) return null;
+    return mapRideFromDB(data);
+  },
+
+  async placeBid(bid: Partial<Bid>) {
+    const { error } = await supabase.from('bids').insert({
+      ride_id: bid.rideId,
+      rider_id: bid.riderId,
+      amount: bid.bidAmount,
+      status: 'pending'
+    });
+    return !error;
+  },
+
+  // ADMIN METHODS
+  async getDashboardStats() {
+    try {
+      const [
+        { count: ridesCount },
+        { count: ridersCount },
+        { count: activeRidersCount },
+        { count: passengersCount }
+      ] = await Promise.all([
+        supabase.from('rides').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'rider'),
+        supabase.from('rider_details').select('*', { count: 'exact', head: true }).eq('is_online', true),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
+      ]);
+      const { data: revenueData } = await supabase.from('transactions').select('amount').eq('type', 'admin_fee');
+      const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
+      return { ridesCount: ridesCount || 0, ridersCount: ridersCount || 0, activeRidersCount: activeRidersCount || 0, passengersCount: passengersCount || 0, totalRevenue };
+    } catch {
+      return { ridesCount: 0, ridersCount: 0, activeRidersCount: 0, passengersCount: 0, totalRevenue: 0 };
+    }
   },
 
   async getLatestAlert() {
     try {
       const { data } = await supabase.from('emergency_alerts').select('*').order('created_at', { ascending: false }).limit(1);
       return data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 };
