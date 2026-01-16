@@ -7,7 +7,7 @@ export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking'
 export const supabaseService = {
   async checkConnectionStatus(): Promise<ConnectionStatus> {
     const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Timeout')), 3000)
+      setTimeout(() => reject(new Error('Timeout')), 2500)
     );
 
     try {
@@ -15,12 +15,12 @@ export const supabaseService = {
       const supabaseUrl = client.supabaseUrl;
       const supabaseKey = client.supabaseKey;
 
-      // If the key is the placeholder, we are in Prototype Mode
-      if (!supabaseKey || supabaseKey === 'your-anon-key') {
+      // IMMEDIATE CHECK: If keys are placeholders, don't even try to fetch
+      if (!supabaseKey || supabaseKey === 'your-anon-key' || supabaseUrl.includes('your-project')) {
         return 'prototype';
       }
 
-      // Test connectivity with a timeout
+      // Test connectivity with a short timeout
       const fetchPromise = supabase.from('profiles').select('id').limit(1);
       const result = await Promise.race([fetchPromise, timeoutPromise]);
       const { error } = result as any;
