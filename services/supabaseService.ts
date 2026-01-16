@@ -4,7 +4,7 @@ import { User, Passenger, Rider, Ride, Bid, Transaction, LoadRequest, SavedLocat
 
 export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking';
 
-// Helper to convert DB snake_case to App camelCase
+// Helper to convert DB snake_case to App camelCase for Rides
 const mapRideFromDB = (dbRide: any): Ride => ({
   id: dbRide.id,
   passengerId: dbRide.passenger_id,
@@ -29,7 +29,53 @@ const mapRideFromDB = (dbRide: any): Ride => ({
   paymentStatus: dbRide.payment_status,
   createdAt: dbRide.created_at,
   estimatedDuration: Math.round(dbRide.distance * 2.5),
-  bids: [] // Bids are usually fetched separately or via join
+  bids: [] 
+});
+
+const mapRiderFromDB = (data: any): Rider => ({
+  id: data.id,
+  username: data.username,
+  name: data.full_name,
+  phone: data.phone,
+  userType: 'rider',
+  createdAt: data.created_at,
+  isActive: data.is_active,
+  isFlagged: data.is_flagged,
+  currentBalance: Number(data.balance),
+  isOnline: data.rider_details?.is_online || false,
+  isAvailable: data.rider_details?.is_available || true,
+  rating: Number(data.rider_details?.rating || 5),
+  totalRides: data.rider_details?.total_rides || 0,
+  totalEarnings: 0, // Calculated or fetched from transactions
+  licenseNumber: data.rider_details?.license_number || '',
+  governmentLicenseId: data.rider_details?.gov_id || '',
+  currentLocation: {
+    latitude: data.rider_details?.lat || 14.5995,
+    longitude: data.rider_details?.lng || 120.9842
+  },
+  vehicle: {
+    id: data.rider_details?.profile_id || '',
+    plateNumber: data.rider_details?.plate_number || '',
+    vehicleType: data.rider_details?.vehicle_type || 'motorcycle',
+    brand: data.rider_details?.vehicle_brand || '',
+    model: data.rider_details?.vehicle_model || '',
+    color: '',
+    year: 0,
+    capacity: 1
+  }
+});
+
+const mapPassengerFromDB = (data: any): Passenger => ({
+  id: data.id,
+  username: data.username,
+  name: data.full_name,
+  phone: data.phone,
+  userType: 'passenger',
+  createdAt: data.created_at,
+  isActive: data.is_active,
+  isFlagged: data.is_flagged,
+  currentBalance: Number(data.balance),
+  preferredPaymentMethod: 'cash'
 });
 
 export const supabaseService = {
@@ -42,7 +88,7 @@ export const supabaseService = {
       const client = supabase as any;
       const supabaseKey = client.supabaseKey;
 
-      if (!supabaseKey || supabaseKey === 'your-anon-key') {
+      if (!supabaseKey || supabaseKey === 'sb_publishable_IQvPHklDRCSOfBd_w4FPjQ_gqWdC8gs' === false && supabaseKey === 'your-anon-key') {
         return 'prototype';
       }
 
@@ -68,6 +114,8 @@ export const supabaseService = {
     try {
       const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('username', username).eq('user_type', type).single();
       if (error || !data) return null;
+      if (type === 'rider') return mapRiderFromDB(data);
+      if (type === 'passenger') return mapPassengerFromDB(data);
       return { ...data, name: data.full_name, userType: data.user_type } as User;
     } catch { return null; }
   },
@@ -92,11 +140,64 @@ export const supabaseService = {
         vehicle_model: data.vehicle.model,
         plate_number: data.vehicle.plateNumber
       });
+      return mapRiderFromDB({ ...profile, rider_details: { profile_id: profile.id, ...data } });
     }
-    return { ...profile, name: profile.full_name, userType: profile.user_type };
+    return mapPassengerFromDB(profile);
   },
 
-  // RIDE METHODS
+  // ADMIN FETCH METHODS
+  async getAllRiders(): Promise<Rider[]> {
+    const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('user_type', 'rider');
+    if (error || !data) return [];
+    return data.map(mapRiderFromDB);
+  },
+
+  async getAllPassengers(): Promise<Passenger[]> {
+    const { data, error } = await supabase.from('profiles').select('*').eq('user_type', 'passenger');
+    if (error || !data) return [];
+    return data.map(mapPassengerFromDB);
+  },
+
+  async getAllRides(): Promise<Ride[]> {
+    const { data, error } = await supabase.from('rides').select('*').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(mapRideFromDB);
+  },
+
+  async getAllTransactions(): Promise<Transaction[]> {
+    const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(tx => ({
+      id: tx.id,
+      userId: tx.user_id,
+      type: tx.type as any,
+      amount: Number(tx.amount),
+      balanceBefore: Number(tx.balance_before),
+      balanceAfter: Number(tx.balance_after),
+      referenceId: tx.reference_id,
+      description: tx.description,
+      createdAt: tx.created_at
+    }));
+  },
+
+  async getAllLoadRequests(): Promise<LoadRequest[]> {
+    const { data, error } = await supabase.from('load_requests').select('*, load_request_messages(*)').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(lr => ({
+      id: lr.id,
+      riderId: lr.rider_id,
+      amount: Number(lr.amount),
+      status: lr.status,
+      createdAt: lr.created_at,
+      messages: lr.load_request_messages.map((m: any) => ({
+        id: m.id,
+        senderId: m.sender_id,
+        text: m.message_text,
+        createdAt: m.created_at
+      }))
+    }));
+  },
+
   async getAvailableRides(): Promise<Ride[]> {
     const { data, error } = await supabase.from('rides').select('*').eq('status', 'pending');
     if (error || !data) return [];
@@ -133,7 +234,6 @@ export const supabaseService = {
     return !error;
   },
 
-  // ADMIN METHODS
   async getDashboardStats() {
     try {
       const [
@@ -160,5 +260,10 @@ export const supabaseService = {
       const { data } = await supabase.from('emergency_alerts').select('*').order('created_at', { ascending: false }).limit(1);
       return data?.[0] || null;
     } catch { return null; }
+  },
+
+  async sendEmergencyAlert(message: string, severity: string) {
+    const { error } = await supabase.from('emergency_alerts').insert({ message, severity });
+    return !error;
   }
 };
