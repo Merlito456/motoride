@@ -195,22 +195,6 @@ const App: React.FC = () => {
                     BECOME A PILOT <Truck size={22} className="group-hover:rotate-12 transition-transform" />
                   </button>
                </div>
-
-               {/* Stats Row */}
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-16 pt-20">
-                  {[
-                    { label: 'Avg Dispatch', val: '2.4 MIN', icon: Clock },
-                    { label: 'Safety Rating', val: '4.9/5.0', icon: ShieldCheck },
-                    { label: 'Pilot Growth', val: '+400%', icon: TrendingUp },
-                    { label: 'Regulated', val: 'LTFRB+', icon: Lock }
-                  ].map((s, i) => (
-                    <div key={i} className="flex flex-col items-center">
-                       <s.icon size={20} className="text-yellow-500 mb-2" />
-                       <p className="text-2xl font-black italic tracking-tighter">{s.val}</p>
-                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{s.label}</p>
-                    </div>
-                  ))}
-               </div>
             </section>
 
             {/* Core Pillars */}
