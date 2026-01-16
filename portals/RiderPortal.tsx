@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Rider, Ride, Bid, Coordinates, LoadRequest } from '../types';
 import { mockBackend } from '../services/mockBackend';
-import { ConnectionStatus } from '../services/supabaseService';
+import { supabaseService, ConnectionStatus } from '../services/supabaseService';
 import { 
   Power, MapPin, Navigation, DollarSign, Star, 
   TrendingUp, Bell, CheckCircle, Package, ArrowLeft,
@@ -57,15 +57,25 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
   }, []);
 
   useEffect(() => {
-    const fetchData = () => {
-      const latestRider = mockBackend.getRiders().find(r => r.id === user.id);
-      if (latestRider) setRiderData(latestRider);
+    const fetchData = async () => {
+      let latestRider: Rider | null = null;
+      let allRides: Ride[] = [];
+      let currentActive: Ride | null = null;
 
-      const allRides = mockBackend.getRides();
+      if (dbStatus === 'online') {
+        const riders = await supabaseService.getAllRiders();
+        latestRider = riders.find(r => r.id === user.id) || null;
+        allRides = await supabaseService.getAllRides();
+        currentActive = allRides.find(r => r.riderId === user.id && r.status !== 'completed' && r.status !== 'cancelled') || null;
+      } else {
+        latestRider = mockBackend.getRiders().find(r => r.id === user.id) || null;
+        allRides = mockBackend.getRides();
+        currentActive = allRides.find(r => r.riderId === user.id && r.status !== 'completed' && r.status !== 'cancelled') || null;
+      }
+
+      if (latestRider) setRiderData(latestRider);
       setRides(allRides.filter(r => r.status === 'pending'));
-      
-      const inProgress = allRides.find(r => r.riderId === user.id && r.status !== 'completed' && r.status !== 'cancelled');
-      if (inProgress) setActiveRide(inProgress);
+      setActiveRide(currentActive);
 
       const startOfDay = new Date();
       startOfDay.setHours(0,0,0,0);
@@ -76,7 +86,7 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
     fetchData();
     const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
-  }, [user.id]);
+  }, [user.id, dbStatus]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -121,17 +131,44 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
   }, [online, rides, activeRide, currentPos]);
 
   const toggleOnline = () => setOnline(!online);
-  const handleCompleteRide = () => { if (activeRide) mockBackend.completeRide(activeRide.id); setActiveRide(null); };
+  
+  const handleCompleteRide = async () => { 
+    if (!activeRide) return;
+    if (dbStatus === 'online') {
+      // In a real app, this would be a specialized RPC or multiple updates
+      await supabaseService.updateRideStatus(activeRide.id, 'completed');
+    } else {
+      mockBackend.completeRide(activeRide.id); 
+    }
+    setActiveRide(null); 
+  };
 
-  const submitBid = () => {
+  const submitBid = async () => {
     if (!showBidModal || bidAmount <= 0) return;
-    mockBackend.placeBid({
+    
+    const bidPayload = {
       rideId: showBidModal.id,
       riderId: riderData.id,
       bidAmount: bidAmount,
       message: 'Professional pilot ready for mission.'
-    });
+    };
+
+    if (dbStatus === 'online') {
+      await supabaseService.placeBid(bidPayload);
+    } else {
+      mockBackend.placeBid(bidPayload);
+    }
+    
     setShowBidModal(null);
+  };
+
+  const handleAcceptRide = async (ride: Ride) => {
+    if (dbStatus === 'online') {
+      // For instant accept, we can use a "default" bid flow or just update the ride
+      await supabaseService.acceptBid(ride.id, 'instant', riderData.id, ride.baseFare);
+    } else {
+      mockBackend.updateRide(ride.id, { riderId: riderData.id, status: 'accepted' });
+    }
   };
 
   const handleOpenBid = (ride: Ride) => {
@@ -143,7 +180,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
     <div className="relative w-full h-[calc(100vh-10rem)] rounded-3xl overflow-hidden bg-gray-200 border-4 border-white shadow-2xl">
       <div id="leaflet-map" ref={mapContainerRef} className={`absolute inset-0 z-0 h-full w-full transition-all duration-700 ${!online && !activeRide ? 'grayscale' : ''}`} />
       
-      {/* Bid Modal Overlay */}
       {showBidModal && (
         <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 pointer-events-auto">
           <div className="bg-white rounded-[3rem] w-full max-w-sm overflow-hidden shadow-2xl animate-scale-in">
@@ -232,7 +268,7 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
                        <div className="w-full bg-indigo-50 text-indigo-600 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest text-center border border-indigo-100">Offer Submitted</div>
                      ) : (
                        <button 
-                         onClick={() => ride.biddingEnabled ? handleOpenBid(ride) : mockBackend.updateRide(ride.id, { riderId: riderData.id, status: 'accepted' })} 
+                         onClick={() => ride.biddingEnabled ? handleOpenBid(ride) : handleAcceptRide(ride)} 
                          className={`w-full py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 group-hover:scale-[1.02] active:scale-95 ${ride.biddingEnabled ? 'bg-indigo-600 text-white' : 'bg-yellow-400 text-black shadow-yellow-100'}`}
                        >
                          {ride.biddingEnabled ? <><Gavel size={14} /> Submit Offer</> : <><ChevronRight size={14} /> Instant Accept</>}
@@ -244,7 +280,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
           </div>
         ) : online ? (
           <div className="max-w-xs mx-auto pointer-events-auto bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-gray-100 flex flex-col items-center gap-3 animate-pulse">
-             {/* Added Activity to imports above to fix line 247 error */}
              <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center text-black shadow-lg"><Activity className="animate-spin" size={24} /></div>
              <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Scanning local grid...</p>
           </div>
