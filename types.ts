@@ -4,8 +4,8 @@ export type UserType = 'passenger' | 'rider' | 'admin';
 export interface User {
   id: string;
   email?: string;
-  username: string; // Added for registration
-  password?: string; // Added for login support
+  username: string;
+  password?: string;
   phone: string;
   name: string;
   userType: UserType;
@@ -77,6 +77,7 @@ export interface Ride {
   riderId?: string;
   pickupLocation: Coordinates;
   destination: Coordinates;
+  routePolyline?: [number, number][]; // New: Stores actual road path
   distance: number;
   baseFare: number;
   biddingEnabled: boolean;
