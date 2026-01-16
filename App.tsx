@@ -68,17 +68,26 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeApp = async () => {
         mockBackend.initialize();
-        const status = await supabaseService.checkConnectionStatus();
-        setDbStatus(status);
+        
+        // Safety timeout for the entire initialization process
+        const initTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
+        
+        const performCheck = async () => {
+          const status = await supabaseService.checkConnectionStatus();
+          setDbStatus(status);
 
-        try {
-            const alert = status === 'online' 
-              ? await supabaseService.getLatestAlert() 
-              : mockBackend.getLatestEmergency();
-            if (alert) setCurrentAlert(alert as any);
-        } catch (e) {
-            console.error("Alert fetch failed", e);
-        }
+          try {
+              const alert = status === 'online' 
+                ? await supabaseService.getLatestAlert() 
+                : mockBackend.getLatestEmergency();
+              if (alert) setCurrentAlert(alert as any);
+          } catch (e) {
+              console.error("Alert fetch failed", e);
+          }
+        };
+
+        // Run check but don't let it block the app for more than 5s
+        await Promise.race([performCheck(), initTimeout]);
         setIsInitialized(true);
     };
     initializeApp();
