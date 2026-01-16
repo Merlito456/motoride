@@ -40,13 +40,14 @@ const mapRideFromDB = (dbRide: any): Ride => ({
   paymentStatus: dbRide.payment_status,
   createdAt: dbRide.created_at,
   estimatedDuration: Math.round(dbRide.distance * 2.5),
-  routePolyline: dbRide.route_polyline, // Assuming added to schema
+  routePolyline: dbRide.route_polyline,
   bids: dbRide.bids ? dbRide.bids.map(mapBidFromDB) : []
 });
 
 const mapRiderFromDB = (data: any): Rider => ({
   id: data.id,
   username: data.username,
+  password: data.password, // Explicitly map password
   name: data.full_name,
   phone: data.phone,
   userType: 'rider',
@@ -80,6 +81,7 @@ const mapRiderFromDB = (data: any): Rider => ({
 const mapPassengerFromDB = (data: any): Passenger => ({
   id: data.id,
   username: data.username,
+  password: data.password, // Explicitly map password
   name: data.full_name,
   phone: data.phone,
   userType: 'passenger',
@@ -157,7 +159,7 @@ export const supabaseService = {
   async register(data: any, type: UserType) {
     const { data: profile, error: profileError } = await supabase.from('profiles').insert({
       username: data.username,
-      password: data.password, // Correctly include password in the insert
+      password: data.password, 
       full_name: data.name,
       phone: data.phone,
       user_type: type,
@@ -242,21 +244,17 @@ export const supabaseService = {
   },
 
   async acceptBid(rideId: string, bidId: string, riderId: string, amount: number) {
-    // Transactional logic for accepting a bid
     const { error: bidError } = await supabase.from('bids').update({ status: 'accepted' }).eq('id', bidId);
     if (bidError) return false;
 
-    // Reject other bids for this ride
     await supabase.from('bids').update({ status: 'rejected' }).eq('ride_id', rideId).neq('id', bidId).eq('status', 'pending');
 
-    // Update ride status and total fare
     const { error: rideError } = await supabase.from('rides').update({ 
       rider_id: riderId,
       status: 'accepted',
-      total_fare: amount + 5.0 // amount + admin_fee
+      total_fare: amount + 5.0 
     }).eq('id', rideId);
 
-    // Update rider availability
     await supabase.from('rider_details').update({ is_available: false }).eq('profile_id', riderId);
 
     return !rideError;
