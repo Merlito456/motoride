@@ -2,40 +2,33 @@
 import { supabase } from '../supabase';
 import { User, Passenger, Rider, Ride, Bid, Transaction, LoadRequest, SavedLocation, EmergencyAlert, Coordinates, UserType } from '../types';
 
+export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking';
+
 export const supabaseService = {
-  // Database Health Monitoring
-  async checkConnection(): Promise<boolean> {
+  async checkConnectionStatus(): Promise<ConnectionStatus> {
     try {
-      // Check if URL/Key are placeholders
       const client = supabase as any;
       const supabaseUrl = client.supabaseUrl;
       const supabaseKey = client.supabaseKey;
 
-      if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('placeholder') || supabaseKey === 'your-anon-key') {
-        console.warn("Supabase keys are not configured correctly.");
-        return false;
+      // If the key is the placeholder, we are in Prototype Mode
+      if (!supabaseKey || supabaseKey === 'your-anon-key') {
+        return 'prototype';
       }
 
-      // Test connectivity with a lightweight query
+      // Test connectivity
       const { error } = await supabase.from('profiles').select('id').limit(1);
       
       if (error) {
-        // If the table doesn't exist, it's a "successful" connection to Supabase but missing schema
-        if (error.code === '42P01') {
-          console.warn("Supabase connected but 'profiles' table not found. Schema needed.");
-          return false;
-        }
-        console.error("Supabase connection test failed:", error.message);
-        return false;
+        if (error.code === '42P01') return 'no_schema';
+        return 'prototype';
       }
-      return true;
+      return 'online';
     } catch (e) {
-      console.error("Critical connection failure:", e);
-      return false;
+      return 'prototype';
     }
   },
 
-  // Dashboard Statistics
   async getDashboardStats() {
     try {
       const [
@@ -50,11 +43,7 @@ export const supabaseService = {
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('user_type', 'passenger')
       ]);
 
-      const { data: revenueData } = await supabase
-        .from('transactions')
-        .select('amount')
-        .eq('type', 'admin_fee');
-      
+      const { data: revenueData } = await supabase.from('transactions').select('amount').eq('type', 'admin_fee');
       const totalRevenue = revenueData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0;
 
       return {
@@ -69,19 +58,17 @@ export const supabaseService = {
     }
   },
 
-  // Authentication
   async login(username: string, password: string, type: UserType): Promise<User | null> {
-    // Admin Override (Hardcoded for prototype access)
-    if (type === 'admin' && username === 'adminrabanes' && password === 'rabanes1994') {
-        return {
-          id: 'admin-fixed',
-          username: 'adminrabanes',
-          name: 'System Admin',
-          phone: '000',
-          userType: 'admin',
-          createdAt: new Date().toISOString(),
-          isActive: true
-        };
+    if (type === 'admin' && username === 'admin' && password === 'admin') {
+      return {
+        id: 'admin-fixed',
+        username: 'admin',
+        name: 'System Admin',
+        phone: '000',
+        userType: 'admin',
+        createdAt: new Date().toISOString(),
+        isActive: true
+      };
     }
 
     try {
@@ -93,18 +80,13 @@ export const supabaseService = {
         .single();
 
       if (error || !data) return null;
-      
-      return {
-        ...data,
-        name: data.full_name,
-      } as User;
+      return { ...data, name: data.full_name, userType: data.user_type } as User;
     } catch (e) {
       return null;
     }
   },
 
   async register(data: any, type: UserType) {
-    // 1. Create Profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -114,17 +96,12 @@ export const supabaseService = {
         user_type: type,
         balance: 0
       })
-      .select()
-      .single();
+      .select().single();
 
-    if (profileError) {
-      console.error("Profile creation error:", profileError);
-      throw new Error(`Profile: ${profileError.message} (Code: ${profileError.code})`);
-    }
+    if (profileError) throw profileError;
 
-    // 2. Create Rider Details if applicable
-    if (type === 'rider') {
-      const { error: riderError } = await supabase.from('rider_details').insert({
+    if (type === 'rider' && profile) {
+      await supabase.from('rider_details').insert({
         profile_id: profile.id,
         license_number: data.licenseNumber,
         gov_id: data.governmentLicenseId,
@@ -132,93 +109,13 @@ export const supabaseService = {
         vehicle_model: data.vehicle.model,
         plate_number: data.vehicle.plateNumber
       });
-
-      if (riderError) {
-        console.error("Rider details creation error:", riderError);
-        throw new Error(`Rider Details: ${riderError.message}`);
-      }
     }
 
-    return profile;
+    return { ...profile, name: profile.full_name, userType: profile.user_type };
   },
 
-  // Rides
-  async createRide(rideData: Partial<Ride>) {
-    const { data, error } = await supabase
-      .from('rides')
-      .insert({
-        passenger_id: rideData.passengerId,
-        pickup_lat: rideData.pickupLocation?.latitude,
-        pickup_lng: rideData.pickupLocation?.longitude,
-        pickup_name: rideData.pickupLocation?.placeName,
-        dest_lat: rideData.destination?.latitude,
-        dest_lng: rideData.destination?.longitude,
-        dest_name: rideData.destination?.placeName,
-        distance: rideData.distance,
-        base_fare: rideData.baseFare,
-        total_fare: rideData.totalFare,
-        bidding_enabled: rideData.biddingEnabled,
-        status: 'pending'
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
-
-  async getActiveRide(userId: string) {
-    const { data, error } = await supabase
-      .from('rides')
-      .select('*, bids(*)')
-      .or(`passenger_id.eq.${userId},rider_id.eq.${userId}`)
-      .neq('status', 'completed')
-      .neq('status', 'cancelled')
-      .order('created_at', { ascending: false })
-      .limit(1);
-    
-    return data?.[0] || null;
-  },
-
-  // Saved Locations
-  async getSavedLocations(userId: string) {
-    const { data } = await supabase
-      .from('saved_locations')
-      .select('*')
-      .eq('user_id', userId);
-    return data || [];
-  },
-
-  async saveLocation(userId: string, loc: any) {
-    const { data, error } = await supabase
-      .from('saved_locations')
-      .insert({
-        user_id: userId,
-        label: loc.label,
-        icon_type: loc.iconType,
-        lat: loc.latitude,
-        lng: loc.longitude,
-        place_name: loc.placeName
-      })
-      .select()
-      .single();
-    return data;
-  },
-
-  // Emergency
   async getLatestAlert() {
-    try {
-      const { data } = await supabase
-        .from('emergency_alerts')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      return data?.[0] || null;
-    } catch (e) {
-      return null;
-    }
-  },
-
-  async broadcastEmergency(message: string, severity: string) {
-    await supabase.from('emergency_alerts').insert({ message, severity });
+    const { data } = await supabase.from('emergency_alerts').select('*').order('created_at', { ascending: false }).limit(1);
+    return data?.[0] || null;
   }
 };
