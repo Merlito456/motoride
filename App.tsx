@@ -7,7 +7,6 @@ import Layout from './components/Layout';
 import PassengerPortal from './portals/PassengerPortal';
 import RiderPortal from './portals/RiderPortal';
 import AdminPortal from './portals/AdminPortal';
-// Added TrendingUp to the imports below to fix the "Cannot find name 'TrendingUp'" error on line 202
 import { 
   LogIn, ShieldAlert, X, Megaphone, Zap, ShieldCheck, 
   DollarSign, Clock, ChevronRight, User as UserIcon, 
@@ -43,23 +42,37 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let mounted = true;
+
     const initializeApp = async () => {
+        // Safety timeout: If initialization takes > 3s, force start the app in prototype mode
+        const safetyTimer = setTimeout(() => {
+          if (mounted && !isInitialized) {
+            setDbStatus('prototype');
+            setIsInitialized(true);
+          }
+        }, 3000);
+
         try {
           mockBackend.initialize();
           const status = await supabaseService.checkConnectionStatus();
-          setDbStatus(status);
-
-          const alert = status === 'online' 
-            ? await supabaseService.getLatestAlert() 
-            : mockBackend.getLatestEmergency();
-          if (alert) setCurrentAlert(alert as any);
+          if (mounted) {
+            setDbStatus(status);
+            const alert = status === 'online' 
+              ? await supabaseService.getLatestAlert() 
+              : mockBackend.getLatestEmergency();
+            if (alert) setCurrentAlert(alert as any);
+          }
         } catch (globalE) {
-          setDbStatus('prototype');
+          if (mounted) setDbStatus('prototype');
         } finally {
-          setIsInitialized(true);
+          clearTimeout(safetyTimer);
+          if (mounted) setIsInitialized(true);
         }
     };
+    
     initializeApp();
+    return () => { mounted = false; };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -82,7 +95,7 @@ const App: React.FC = () => {
           setCurrentUser(mockUser);
           setActiveTab(mockUser.userType === 'admin' ? 'dashboard' : 'home');
         } else {
-          setError('Invalid credentials. Access restricted to registered accounts.');
+          setError('Invalid credentials. Check username/password or portal type.');
         }
     } catch (err: any) {
         setError(err.message || 'Login failed.');
@@ -107,6 +120,7 @@ const App: React.FC = () => {
                   plateNumber: plateNo,
                   model: motorModel,
                   brand: motorModel.split(' ')[0] || 'Generic',
+                  id: `veh-${Date.now()}`
                 }
             };
         }
@@ -146,16 +160,25 @@ const App: React.FC = () => {
   };
 
   if (!isInitialized) return (
-    <div className="min-h-screen flex items-center justify-center bg-black text-yellow-400">
-        <Zap className="animate-ping" size={48} />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black text-yellow-400 gap-6">
+        <div className="relative">
+          <div className="absolute inset-0 bg-yellow-400 rounded-full blur-2xl opacity-20 animate-pulse"></div>
+          <Zap className="animate-ping relative z-10" size={64} />
+        </div>
+        <div className="text-center space-y-2">
+          <p className="text-sm font-black italic tracking-widest uppercase">Initializing Command Center</p>
+          <div className="flex gap-1 justify-center">
+             <div className="w-1 h-1 bg-yellow-400 rounded-full animate-bounce delay-75"></div>
+             <div className="w-1 h-1 bg-yellow-400 rounded-full animate-bounce delay-150"></div>
+             <div className="w-1 h-1 bg-yellow-400 rounded-full animate-bounce delay-300"></div>
+          </div>
+        </div>
     </div>
   );
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-yellow-200">
-        {/* Status bar removed for cleaner landing page as requested */}
-        
         <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 h-20 flex items-center justify-between px-8">
            <div onClick={() => setView('landing')} className="flex items-center gap-3 cursor-pointer group">
               <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shadow-lg rotate-3 group-hover:rotate-0 transition-transform">
@@ -294,23 +317,6 @@ const App: React.FC = () => {
                   ))}
                </div>
             </section>
-
-            {/* Visual Object Break - Call to Action Area */}
-            <section className="px-8 py-20">
-               <div className="bg-black rounded-[4rem] p-12 md:p-20 text-white flex flex-col lg:flex-row items-center gap-16 shadow-2xl overflow-hidden relative group">
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-yellow-400 opacity-10 rounded-full blur-[100px] -z-0"></div>
-                  <div className="flex-1 space-y-8 z-10">
-                     <h4 className="text-5xl md:text-7xl font-black italic tracking-tighter uppercase leading-[0.9]">Start earning <br/> on your terms.</h4>
-                     <p className="text-gray-400 text-lg max-w-lg font-medium">Join the most professional fleet in the country. We provide the tech, you provide the ride. Weekly payouts, lower commission, and 24/7 pilot support.</p>
-                     <button onClick={() => { setView('register'); setAuthRole('rider'); }} className="bg-yellow-400 text-black px-12 py-6 rounded-3xl font-black italic text-xl flex items-center gap-4 hover:bg-white transition-all shadow-2xl">
-                        JOIN THE FLEET <Truck size={28} />
-                     </button>
-                  </div>
-                  <div className="flex-shrink-0 w-full lg:w-96 h-96 bg-yellow-400 rounded-[4rem] flex items-center justify-center rotate-6 group-hover:rotate-0 transition-all duration-500 shadow-2xl">
-                     <Bike size={240} className="text-black drop-shadow-2xl" />
-                  </div>
-               </div>
-            </section>
           </div>
         )}
 
@@ -328,7 +334,6 @@ const App: React.FC = () => {
                <div className="p-12 space-y-8">
                   <form onSubmit={view === 'login' ? handleLogin : handleRegister} className="space-y-6">
                      <div className="flex bg-gray-100 p-1.5 rounded-[2rem] border border-gray-200">
-                        {/* Registration role selector: only Passenger and Rider */}
                         {(view === 'register' ? ['passenger', 'rider'] : ['passenger', 'rider', 'admin']).map(role => (
                           <button key={role} type="button" onClick={() => setAuthRole(role as any)} className={`flex-1 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${authRole === role ? 'bg-black text-white shadow-xl' : 'text-gray-400 hover:text-black'}`}>{role}</button>
                         ))}
@@ -340,19 +345,19 @@ const App: React.FC = () => {
                        <>
                          <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Identification</label>
-                            <input required type="text" placeholder="Legal Full Name" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none focus:ring-4 focus:ring-yellow-400/20" value={fullName} onChange={e => setFullName(e.target.value)} />
+                            <input required type="text" placeholder="Legal Full Name" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none" value={fullName} onChange={e => setFullName(e.target.value)} />
                          </div>
                          <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Contact</label>
-                            <input required type="tel" placeholder="Mobile Number" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none focus:ring-4 focus:ring-yellow-400/20" value={phone} onChange={e => setPhone(e.target.value)} />
+                            <input required type="tel" placeholder="Mobile Number" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none" value={phone} onChange={e => setPhone(e.target.value)} />
                          </div>
                        </>
                      )}
 
                      <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-4">Account Access</label>
-                        <input required type="text" placeholder="Username" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none focus:ring-4 focus:ring-yellow-400/20" value={username} onChange={e => setUsername(e.target.value)} />
-                        <input required type="password" placeholder="Password" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none focus:ring-4 focus:ring-yellow-400/20 mt-3" value={password} onChange={e => setPassword(e.target.value)} />
+                        <input required type="text" placeholder="Username" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none" value={username} onChange={e => setUsername(e.target.value)} />
+                        <input required type="password" placeholder="Password" className="w-full px-8 py-5 bg-gray-50 border border-gray-100 rounded-3xl font-bold focus:bg-white transition-all outline-none mt-3" value={password} onChange={e => setPassword(e.target.value)} />
                      </div>
                      
                      {view === 'register' && authRole === 'rider' && (
@@ -380,28 +385,7 @@ const App: React.FC = () => {
            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
               <div className="col-span-1 md:col-span-2 space-y-6">
                  <h1 className="text-3xl font-black italic tracking-tighter">MOTORIDE</h1>
-                 <p className="text-gray-400 text-lg max-w-sm font-medium">Re-engineering urban transit in the Philippines with uncompromising safety and fairness. Join the movement.</p>
-                 <div className="flex gap-4">
-                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white"><Globe size={20} /></div>
-                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white"><ShieldCheck size={20} /></div>
-                    <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white"><Zap size={20} /></div>
-                 </div>
-              </div>
-              <div className="space-y-4">
-                 <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Mission</h4>
-                 <ul className="text-sm font-bold text-gray-600 space-y-3">
-                    <li className="hover:text-yellow-600 cursor-pointer">Safety Guidelines</li>
-                    <li className="hover:text-yellow-600 cursor-pointer">Fare Calculator</li>
-                    <li className="hover:text-yellow-600 cursor-pointer">Service Map</li>
-                 </ul>
-              </div>
-              <div className="space-y-4">
-                 <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Portal</h4>
-                 <ul className="text-sm font-bold text-gray-600 space-y-3">
-                    <li onClick={() => { setAuthRole('admin'); setView('login'); }} className="hover:text-black cursor-pointer flex items-center gap-2 font-black italic uppercase tracking-tighter text-xs">
-                       <LayoutDashboard size={14}/> Node Access
-                    </li>
-                 </ul>
+                 <p className="text-gray-400 text-lg max-w-sm font-medium">Re-engineering urban transit in the Philippines with uncompromising safety and fairness.</p>
               </div>
            </div>
            <div className="max-w-7xl mx-auto pt-16 border-t border-gray-200 mt-16 flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-gray-400">
