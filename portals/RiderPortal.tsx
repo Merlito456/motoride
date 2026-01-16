@@ -53,6 +53,11 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
 
     L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
 
+    // Initial fix for Leaflet rendering issues
+    setTimeout(() => {
+      mapRef.current?.invalidateSize();
+    }, 200);
+
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition((position) => {
         const coords: Coordinates = {
@@ -63,6 +68,7 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
         mockBackend.updateRiderLocation(user.id, coords);
         if (mapRef.current) {
           mapRef.current.setView([coords.latitude, coords.longitude], 16);
+          mapRef.current.invalidateSize();
         }
       }, (error) => {
         console.warn("Rider geolocation failed, using default.", error);
@@ -80,6 +86,15 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
       }
     };
   }, []);
+
+  // Recalculate map size when switching tabs or online status
+  useEffect(() => {
+    if (activeTab === 'home' && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.invalidateSize();
+      }, 100);
+    }
+  }, [activeTab, online]);
 
   // Update Data Polling
   useEffect(() => {
@@ -523,7 +538,7 @@ Official Rider Copy.
 
   return (
     <div className="relative w-full h-[calc(100vh-10rem)] rounded-3xl overflow-hidden bg-gray-200 border-4 border-white shadow-2xl">
-      <div id="leaflet-map" ref={mapContainerRef} className={`absolute inset-0 z-0 transition-all duration-700 ${!online && !activeRide ? 'grayscale contrast-75 brightness-75' : ''}`} />
+      <div id="leaflet-map" ref={mapContainerRef} className={`absolute inset-0 z-0 h-full w-full transition-all duration-700 ${!online && !activeRide ? 'grayscale contrast-75 brightness-75' : ''}`} />
 
       {activeTab === 'earnings' && renderEarnings()}
       {activeTab === 'settings' && renderSettings()}
@@ -564,7 +579,7 @@ Official Rider Copy.
                 {online ? 'ONLINE' : 'OFFLINE'}
              </button>
              <div className="bg-white/90 backdrop-blur-md p-2 rounded-xl shadow-lg border border-gray-100">
-                <LocateFixed size={14} className="text-black cursor-pointer" onClick={() => mapRef.current?.setView([currentPos.latitude, currentPos.longitude], 16)} />
+                <LocateFixed size={14} className="text-black cursor-pointer" onClick={() => { mapRef.current?.setView([currentPos.latitude, currentPos.longitude], 16); mapRef.current?.invalidateSize(); }} />
              </div>
           </div>
         </div>
