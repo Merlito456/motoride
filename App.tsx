@@ -70,8 +70,6 @@ const App: React.FC = () => {
         try {
           mockBackend.initialize();
           
-          const initTimeout = new Promise<void>((resolve) => setTimeout(resolve, 3500));
-          
           const performCheck = async () => {
             try {
               const status = await supabaseService.checkConnectionStatus();
@@ -86,7 +84,7 @@ const App: React.FC = () => {
             }
           };
 
-          await Promise.race([performCheck(), initTimeout]);
+          await performCheck();
         } catch (globalE) {
           console.error("Global init failure", globalE);
           setDbStatus('prototype');
@@ -195,7 +193,7 @@ const App: React.FC = () => {
            {dbStatus === 'online' ? (
              <><Globe size={14} /> Systems Online: Live Database Sync Active</>
            ) : (
-             <><Database size={14} /> Prototype Mode: Local Storage Storage (qsbiquxhkvoyatlrqjfj)</>
+             <><Database size={14} /> Prototype Mode: Local Storage Active</>
            )}
         </div>
 
@@ -247,30 +245,9 @@ const App: React.FC = () => {
                     </div>
                   ))}
                </div>
-
-               <div className="bg-black rounded-[3rem] p-12 text-white flex flex-col md:flex-row items-center gap-12 shadow-2xl relative group">
-                  <div className="flex-1 space-y-6">
-                     <h4 className="text-4xl font-black italic tracking-tighter uppercase">The Motoride Advantage</h4>
-                     <ul className="space-y-4">
-                        {["Regulated Pricing", "Real-time Tracking", "Digital Payments", "Verified History"].map((adv, i) => (
-                           <li key={i} className="flex items-center gap-4">
-                              <CheckCircle className="text-yellow-400" size={20} />
-                              <span className="font-bold text-lg">{adv}</span>
-                           </li>
-                        ))}
-                     </ul>
-                  </div>
-                  <div className="flex-shrink-0 w-72 h-72 bg-yellow-400 rounded-[3rem] flex items-center justify-center rotate-3 group-hover:rotate-0 transition-transform">
-                     <Bike size={150} className="text-black" />
-                  </div>
-               </div>
             </section>
           </div>
         )}
-
-        {view === 'safety' && <StaticContentPage title="Safety Protocols" icon={ShieldCheck} onBack={() => setView('landing')}><p>Strict vetting and real-time SOS systems protect every trip.</p></StaticContentPage>}
-        {view === 'pricing' && <StaticContentPage title="Pricing Model" icon={DollarSign} onBack={() => setView('landing')}><p>₱40 Base + ₱12/KM. Transparent and regulated.</p></StaticContentPage>}
-        {view === 'areas' && <StaticContentPage title="Service Areas" icon={MapPin} onBack={() => setView('landing')}><p>Operating in Metro Manila, Cebu, and Davao.</p></StaticContentPage>}
 
         {(view === 'login' || view === 'register') && (
           <div className="min-h-screen flex items-center justify-center p-8 bg-gray-50 pt-28">
@@ -323,39 +300,15 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-
-        <footer className="py-20 px-8 border-t border-gray-100 bg-gray-50/30">
-           <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between gap-12">
-              <div className="space-y-4">
-                 <h1 className="text-xl font-black italic">MOTORIDE</h1>
-                 <p className="text-gray-400 text-sm max-w-xs">Urban mobility, regulated fares, and professional service. The PH standard.</p>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-12">
-                 <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase tracking-widest">Platform</h4>
-                    <ul className="text-sm font-bold text-gray-400 space-y-2">
-                       <li onClick={() => setView('safety')} className="hover:text-black cursor-pointer">Safety Protocols</li>
-                       <li onClick={() => setView('pricing')} className="hover:text-black cursor-pointer">Pricing Model</li>
-                    </ul>
-                 </div>
-                 <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase tracking-widest">Admin</h4>
-                    <ul className="text-sm font-bold text-gray-400 space-y-2">
-                       <li onClick={() => { setAuthRole('admin'); setView('login'); }} className="hover:text-black cursor-pointer flex items-center gap-2"><ShieldCheck size={14}/> Command Center</li>
-                    </ul>
-                 </div>
-              </div>
-           </div>
-        </footer>
       </div>
     );
   }
 
   return (
     <Layout userType={currentUser.userType} userName={currentUser.name} onLogout={handleLogout} activeTab={activeTab} onTabChange={setActiveTab}>
-      {currentUser.userType === 'passenger' && <PassengerPortal user={currentUser as Passenger} activeTab={activeTab} />}
-      {currentUser.userType === 'rider' && <RiderPortal user={currentUser as Rider} activeTab={activeTab} />}
-      {currentUser.userType === 'admin' && <AdminPortal activeTab={activeTab} />}
+      {currentUser.userType === 'passenger' && <PassengerPortal user={currentUser as Passenger} activeTab={activeTab} dbStatus={dbStatus} />}
+      {currentUser.userType === 'rider' && <RiderPortal user={currentUser as Rider} activeTab={activeTab} dbStatus={dbStatus} />}
+      {currentUser.userType === 'admin' && <AdminPortal activeTab={activeTab} dbStatus={dbStatus} />}
     </Layout>
   );
 };
