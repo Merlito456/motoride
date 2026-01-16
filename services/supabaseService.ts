@@ -4,6 +4,17 @@ import { User, Passenger, Rider, Ride, Bid, Transaction, LoadRequest, SavedLocat
 
 export type ConnectionStatus = 'online' | 'no_schema' | 'prototype' | 'checking';
 
+// Helper to convert DB snake_case to App camelCase for Bids
+const mapBidFromDB = (dbBid: any): Bid => ({
+  id: dbBid.id,
+  rideId: dbBid.ride_id,
+  riderId: dbBid.rider_id,
+  bidAmount: Number(dbBid.amount),
+  status: dbBid.status,
+  createdAt: dbBid.created_at,
+  message: dbBid.message
+});
+
 // Helper to convert DB snake_case to App camelCase for Rides
 const mapRideFromDB = (dbRide: any): Ride => ({
   id: dbRide.id,
@@ -29,7 +40,8 @@ const mapRideFromDB = (dbRide: any): Ride => ({
   paymentStatus: dbRide.payment_status,
   createdAt: dbRide.created_at,
   estimatedDuration: Math.round(dbRide.distance * 2.5),
-  bids: [] 
+  routePolyline: dbRide.route_polyline, // Assuming added to schema
+  bids: dbRide.bids ? dbRide.bids.map(mapBidFromDB) : []
 });
 
 const mapRiderFromDB = (data: any): Rider => ({
@@ -46,7 +58,7 @@ const mapRiderFromDB = (data: any): Rider => ({
   isAvailable: data.rider_details?.is_available || true,
   rating: Number(data.rider_details?.rating || 5),
   totalRides: data.rider_details?.total_rides || 0,
-  totalEarnings: 0, // Calculated or fetched from transactions
+  totalEarnings: 0,
   licenseNumber: data.rider_details?.license_number || '',
   governmentLicenseId: data.rider_details?.gov_id || '',
   currentLocation: {
@@ -78,6 +90,29 @@ const mapPassengerFromDB = (data: any): Passenger => ({
   preferredPaymentMethod: 'cash'
 });
 
+// Helper to convert DB snake_case to App camelCase for Transactions
+const mapTransactionFromDB = (data: any): Transaction => ({
+  id: data.id,
+  userId: data.user_id,
+  type: data.type,
+  amount: Number(data.amount),
+  balanceBefore: Number(data.balance_before),
+  balanceAfter: Number(data.balance_after),
+  referenceId: data.reference_id,
+  description: data.description,
+  createdAt: data.created_at
+});
+
+// Helper to convert DB snake_case to App camelCase for LoadRequests
+const mapLoadRequestFromDB = (data: any): LoadRequest => ({
+  id: data.id,
+  riderId: data.rider_id,
+  amount: Number(data.amount),
+  status: data.status,
+  messages: data.messages || [],
+  createdAt: data.created_at
+});
+
 export const supabaseService = {
   async checkConnectionStatus(): Promise<ConnectionStatus> {
     const timeoutPromise = new Promise<never>((_, reject) => 
@@ -106,7 +141,6 @@ export const supabaseService = {
     }
   },
 
-  // AUTH METHODS
   async login(username: string, password: string, type: UserType): Promise<User | null> {
     if (type === 'admin' && username === 'admin' && password === 'admin') {
       return { id: 'admin-fixed', username: 'admin', name: 'System Admin', phone: '000', userType: 'admin', createdAt: new Date().toISOString(), isActive: true };
@@ -145,7 +179,6 @@ export const supabaseService = {
     return mapPassengerFromDB(profile);
   },
 
-  // ADMIN FETCH METHODS
   async getAllRiders(): Promise<Rider[]> {
     const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('user_type', 'rider');
     if (error || !data) return [];
@@ -159,49 +192,20 @@ export const supabaseService = {
   },
 
   async getAllRides(): Promise<Ride[]> {
-    const { data, error } = await supabase.from('rides').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('rides').select('*, bids(*)').order('created_at', { ascending: false });
     if (error || !data) return [];
     return data.map(mapRideFromDB);
   },
 
-  async getAllTransactions(): Promise<Transaction[]> {
-    const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-    if (error || !data) return [];
-    return data.map(tx => ({
-      id: tx.id,
-      userId: tx.user_id,
-      type: tx.type as any,
-      amount: Number(tx.amount),
-      balanceBefore: Number(tx.balance_before),
-      balanceAfter: Number(tx.balance_after),
-      referenceId: tx.reference_id,
-      description: tx.description,
-      createdAt: tx.created_at
-    }));
+  async getRideById(rideId: string): Promise<Ride | null> {
+    const { data, error } = await supabase.from('rides').select('*, bids(*)').eq('id', rideId).single();
+    if (error || !data) return null;
+    return mapRideFromDB(data);
   },
 
-  async getAllLoadRequests(): Promise<LoadRequest[]> {
-    const { data, error } = await supabase.from('load_requests').select('*, load_request_messages(*)').order('created_at', { ascending: false });
-    if (error || !data) return [];
-    return data.map(lr => ({
-      id: lr.id,
-      riderId: lr.rider_id,
-      amount: Number(lr.amount),
-      status: lr.status,
-      createdAt: lr.created_at,
-      messages: lr.load_request_messages.map((m: any) => ({
-        id: m.id,
-        senderId: m.sender_id,
-        text: m.message_text,
-        createdAt: m.created_at
-      }))
-    }));
-  },
-
-  async getAvailableRides(): Promise<Ride[]> {
-    const { data, error } = await supabase.from('rides').select('*').eq('status', 'pending');
-    if (error || !data) return [];
-    return data.map(mapRideFromDB);
+  async updateRideStatus(rideId: string, status: string) {
+    const { error } = await supabase.from('rides').update({ status }).eq('id', rideId);
+    return !error;
   },
 
   async createRide(ride: Partial<Ride>): Promise<Ride | null> {
@@ -217,8 +221,9 @@ export const supabaseService = {
       base_fare: ride.baseFare,
       total_fare: ride.totalFare,
       bidding_enabled: ride.biddingEnabled,
+      route_polyline: ride.routePolyline,
       status: 'pending'
-    }).select().single();
+    }).select('*, bids(*)').single();
 
     if (error || !data) return null;
     return mapRideFromDB(data);
@@ -229,9 +234,45 @@ export const supabaseService = {
       ride_id: bid.rideId,
       rider_id: bid.riderId,
       amount: bid.bidAmount,
+      message: bid.message,
       status: 'pending'
     });
     return !error;
+  },
+
+  async acceptBid(rideId: string, bidId: string, riderId: string, amount: number) {
+    // Transactional logic for accepting a bid
+    const { error: bidError } = await supabase.from('bids').update({ status: 'accepted' }).eq('id', bidId);
+    if (bidError) return false;
+
+    // Reject other bids for this ride
+    await supabase.from('bids').update({ status: 'rejected' }).eq('ride_id', rideId).neq('id', bidId).eq('status', 'pending');
+
+    // Update ride status and total fare
+    const { error: rideError } = await supabase.from('rides').update({ 
+      rider_id: riderId,
+      status: 'accepted',
+      total_fare: amount + 5.0 // amount + admin_fee
+    }).eq('id', rideId);
+
+    // Update rider availability
+    await supabase.from('rider_details').update({ is_available: false }).eq('profile_id', riderId);
+
+    return !rideError;
+  },
+
+  // Fix: Added missing getAllTransactions method
+  async getAllTransactions(): Promise<Transaction[]> {
+    const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(mapTransactionFromDB);
+  },
+
+  // Fix: Added missing getAllLoadRequests method
+  async getAllLoadRequests(): Promise<LoadRequest[]> {
+    const { data, error } = await supabase.from('load_requests').select('*').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(mapLoadRequestFromDB);
   },
 
   async getDashboardStats() {
