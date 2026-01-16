@@ -14,7 +14,7 @@ import {
   UserPlus, ArrowLeft, Bike, Star, Info, CheckCircle,
   MapPin, Heart, FileText, Lock, AlertCircle, Database, HelpCircle, 
   ChevronDown, MousePointer2, Globe, LayoutDashboard, Truck, Wallet,
-  TrendingUp
+  TrendingUp, Award, Rocket, CheckCircle2, Shield
 } from 'lucide-react';
 
 type LandingView = 'landing' | 'login' | 'register' | 'safety' | 'pricing' | 'areas' | 'mission' | 'privacy' | 'terms';
@@ -195,6 +195,82 @@ const App: React.FC = () => {
                     BECOME A PILOT <Truck size={22} className="group-hover:rotate-12 transition-transform" />
                   </button>
                </div>
+            </section>
+
+            {/* Facebook Style Ad Campaign Section */}
+            <section className="px-8 py-20 bg-gray-50">
+              <div className="max-w-7xl mx-auto space-y-12">
+                <div className="text-center space-y-4">
+                  <span className="bg-yellow-100 text-yellow-700 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Growth Phase Active</span>
+                  <h2 className="text-4xl md:text-6xl font-black italic tracking-tighter uppercase">Why join MotoRide today?</h2>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-8">
+                  {/* Rider Ad Card */}
+                  <div className="bg-yellow-400 rounded-[3rem] p-10 md:p-14 shadow-2xl flex flex-col justify-between relative overflow-hidden group hover:scale-[1.01] transition-transform duration-500">
+                    <div className="absolute top-[-50px] right-[-50px] w-64 h-64 bg-black/5 rounded-full blur-3xl"></div>
+                    <div className="z-10 space-y-6">
+                      <div className="flex items-center gap-3 bg-black text-yellow-400 w-fit px-4 py-2 rounded-2xl font-black uppercase italic text-xs shadow-xl">
+                        <Award size={16} /> FOR PILOTS
+                      </div>
+                      <h3 className="text-5xl font-black italic tracking-tighter uppercase leading-[0.9]">Own the road. <br/> Own your time.</h3>
+                      <p className="text-black font-bold text-lg opacity-80 leading-snug max-w-sm">Join the highest-earning motorcycle fleet in the country. We don't just give you rides; we give you a career.</p>
+                      
+                      <ul className="space-y-4 pt-4">
+                        {[
+                          { text: "Weekly Payouts, No Delays", icon: CheckCircle2 },
+                          { text: "Lowest commission rates (10%)", icon: CheckCircle2 },
+                          { text: "Accident insurance for every trip", icon: Shield },
+                          { text: "Professional safety gear provided", icon: Award }
+                        ].map((item, idx) => (
+                          <li key={idx} className="flex items-center gap-3 font-black uppercase italic text-xs">
+                            <item.icon size={18} className="text-black fill-black/10" /> {item.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <button 
+                      onClick={() => { setView('register'); setAuthRole('rider'); window.scrollTo(0,0); }}
+                      className="mt-12 bg-black text-white px-10 py-6 rounded-3xl font-black italic text-xl flex items-center justify-center gap-4 hover:bg-gray-900 transition-all shadow-2xl group-hover:translate-y-[-5px]"
+                    >
+                      APPLY AS PILOT <Rocket size={24} className="group-hover:animate-bounce" />
+                    </button>
+                  </div>
+
+                  {/* Passenger Ad Card */}
+                  <div className="bg-black rounded-[3rem] p-10 md:p-14 shadow-2xl flex flex-col justify-between relative overflow-hidden group hover:scale-[1.01] transition-transform duration-500">
+                    <div className="absolute bottom-[-50px] left-[-50px] w-64 h-64 bg-yellow-400/10 rounded-full blur-3xl"></div>
+                    <div className="z-10 space-y-6">
+                      <div className="flex items-center gap-3 bg-yellow-400 text-black w-fit px-4 py-2 rounded-2xl font-black uppercase italic text-xs shadow-xl">
+                        <Star size={16} className="fill-black" /> FOR PASSENGERS
+                      </div>
+                      <h3 className="text-5xl font-black italic tracking-tighter uppercase leading-[0.9] text-white">Skip the traffic. <br/> Keep the class.</h3>
+                      <p className="text-gray-400 font-bold text-lg leading-snug max-w-sm">Stop waiting for overpriced cars. Get there faster with our vetted professional pilots and transparent fares.</p>
+                      
+                      <ul className="space-y-4 pt-4">
+                        {[
+                          { text: "Regulated Base Fares (No Surges)", icon: CheckCircle2 },
+                          { text: "Pilots with 100% background checks", icon: CheckCircle2 },
+                          { text: "Instant real-time bid system", icon: Zap },
+                          { text: "Luxury helmets and clean gear", icon: Star }
+                        ].map((item, idx) => (
+                          <li key={idx} className="flex items-center gap-3 font-black uppercase italic text-xs text-white">
+                            <item.icon size={18} className="text-yellow-400" /> {item.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <button 
+                      onClick={() => { setView('register'); setAuthRole('passenger'); window.scrollTo(0,0); }}
+                      className="mt-12 bg-yellow-400 text-black px-10 py-6 rounded-3xl font-black italic text-xl flex items-center justify-center gap-4 hover:bg-white transition-all shadow-2xl group-hover:translate-y-[-5px]"
+                    >
+                      BOOK A RIDE <ChevronRight size={24} className="group-hover:translate-x-2 transition-transform" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </section>
 
             {/* Core Pillars */}
