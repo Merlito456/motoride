@@ -73,14 +73,33 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
         console.warn("Failed to fetch live admin data", e);
       }
     } else {
-      setRides(mockBackend.getRides());
-      setRiders(mockBackend.getRiders());
-      setPassengers(mockBackend.getPassengers());
-      setTransactions(mockBackend.getTransactions());
-      setLoadRequests(mockBackend.getLoadRequests());
+      const allRides = mockBackend.getRides();
+      const allRiders = mockBackend.getRiders();
+      const allPassengers = mockBackend.getPassengers();
+      const allTransactions = mockBackend.getTransactions();
+      const allLoadRequests = mockBackend.getLoadRequests();
+
+      setRides(allRides);
+      setRiders(allRiders);
+      setPassengers(allPassengers);
+      setTransactions(allTransactions);
+      setLoadRequests(allLoadRequests);
+
+      // Local mock stats calculation
+      const revenue = allTransactions
+        .filter(t => t.type === 'admin_fee')
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+      setRealtimeStats({
+        ridesCount: allRides.length,
+        ridersCount: allRiders.length,
+        activeRidersCount: allRiders.filter(r => r.isOnline).length,
+        passengersCount: allPassengers.length,
+        totalRevenue: revenue
+      });
 
       if (activeSupportRequest) {
-        const updated = mockBackend.getLoadRequests().find(r => r.id === activeSupportRequest.id);
+        const updated = allLoadRequests.find(r => r.id === activeSupportRequest.id);
         if (updated) setActiveSupportRequest(updated);
       }
     }
@@ -111,7 +130,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
       maxZoom: 20,
     }).addTo(mapRef.current);
 
-    // Initial size recalculation
     setTimeout(() => {
       mapRef.current?.invalidateSize();
     }, 300);
@@ -124,7 +142,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
     };
   }, [activeTab]);
 
-  // Recalculate size when tab switching back to dashboard
   useEffect(() => {
     if (activeTab === 'dashboard' && mapRef.current) {
       setTimeout(() => {
@@ -199,106 +216,37 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
   };
 
   const stats = [
-    { 
-      label: 'Total Revenue', 
-      value: dbStatus === 'online' ? `₱${realtimeStats.totalRevenue.toFixed(0)}` : `₱${transactions.filter(t => t.type === 'admin_fee').reduce((sum, t) => sum + Math.abs(t.amount), 0).toFixed(0)}`, 
-      icon: DollarSign, 
-      color: 'from-green-500 to-emerald-600', 
-      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
-    },
-    { 
-      label: 'Platform Rides', 
-      value: dbStatus === 'online' ? realtimeStats.ridesCount : rides.length, 
-      icon: Activity, 
-      color: 'from-blue-500 to-indigo-600', 
-      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
-    },
-    { 
-      label: 'Active Fleet', 
-      value: dbStatus === 'online' ? realtimeStats.activeRidersCount : riders.filter(r => r.isOnline).length, 
-      icon: Truck, 
-      color: 'from-yellow-400 to-orange-500', 
-      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
-    },
-    { 
-      label: 'Total Users', 
-      value: dbStatus === 'online' ? (realtimeStats.ridersCount + realtimeStats.passengersCount) : (riders.length + passengers.length), 
-      icon: Users, 
-      color: 'from-purple-500 to-pink-600', 
-      trend: dbStatus === 'online' ? 'LIVE' : 'MOCK' 
-    },
+    { label: 'Total Revenue', value: `₱${realtimeStats.totalRevenue.toFixed(0)}`, icon: DollarSign, color: 'from-green-500 to-emerald-600' },
+    { label: 'Platform Rides', value: realtimeStats.ridesCount, icon: Activity, color: 'from-blue-500 to-indigo-600' },
+    { label: 'Active Fleet', value: realtimeStats.activeRidersCount, icon: Truck, color: 'from-yellow-400 to-orange-500' },
+    { label: 'Total Users', value: (realtimeStats.ridersCount + realtimeStats.passengersCount), icon: Users, color: 'from-purple-500 to-pink-600' },
   ];
 
   const chartData = [
-    { name: 'Mon', rev: 120, rides: 12 },
-    { name: 'Tue', rev: 210, rides: 18 },
-    { name: 'Wed', rev: 180, rides: 15 },
-    { name: 'Thu', rev: 350, rides: 28 },
-    { name: 'Fri', rev: 420, rides: 32 },
-    { name: 'Sat', rev: 580, rides: 45 },
-    { name: 'Sun', rev: 640, rides: 52 },
+    { name: 'Mon', rev: 120 }, { name: 'Tue', rev: 210 }, { name: 'Wed', rev: 180 }, { name: 'Thu', rev: 350 }, { name: 'Fri', rev: 420 }, { name: 'Sat', rev: 580 }, { name: 'Sun', rev: 640 },
   ];
 
   const renderDashboard = () => (
     <div className="space-y-8 animate-fade-in">
-      <div className={`p-6 rounded-[2.5rem] shadow-xl border transition-all duration-500 flex flex-col md:flex-row items-center gap-8 ${
-        dbStatus === 'online' ? 'bg-white border-green-100' : 
-        dbStatus === 'no_schema' ? 'bg-orange-50 border-orange-100' :
-        'bg-red-50/50 border-red-100'
+      <div className={`p-6 rounded-[2.5rem] shadow-xl border transition-all duration-500 flex items-center gap-8 ${
+        dbStatus === 'online' ? 'bg-white border-green-100' : 'bg-red-50/50 border-red-100'
       }`}>
-         <div className="flex items-center gap-6">
-            <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${
-               dbStatus === 'online' ? 'bg-green-500 text-white' : 
-               dbStatus === 'no_schema' ? 'bg-orange-400 text-white' :
-               'bg-red-500 text-white animate-pulse'
-            }`}>
-               {dbStatus === 'online' ? <Wifi size={32} /> : 
-                dbStatus === 'no_schema' ? <Database size={32} /> :
-                <WifiOff size={32} />}
-            </div>
-            <div>
-               <div className="flex items-center gap-3">
-                  <h3 className="text-xl font-black italic uppercase tracking-tighter">
-                    SUPABASE: {dbStatus === 'no_schema' ? 'SCHEMA MISSING' : dbStatus.toUpperCase()}
-                  </h3>
-               </div>
-               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
-                  {dbStatus === 'online' ? 'All systems nominal. Streaming real-time data.' : 
-                   dbStatus === 'no_schema' ? 'Connected but tables missing. Run SQL script.' :
-                   'Connectivity restricted. Operating in prototype mode.'}
-               </p>
-            </div>
+         <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${dbStatus === 'online' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+            {dbStatus === 'online' ? <Wifi size={32} /> : <WifiOff size={32} />}
          </div>
-         <div className="flex-1 flex justify-end gap-3 w-full md:w-auto">
-            {dbStatus !== 'online' && (
-              <a 
-                href="https://supabase.com/dashboard" 
-                target="_blank" 
-                rel="noreferrer"
-                className="bg-yellow-400 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-yellow-500 transition-all shadow-lg shadow-yellow-100"
-              >
-                 <ExternalLink size={14} /> Database Console
-              </a>
-            )}
+         <div>
+            <h3 className="text-xl font-black italic uppercase tracking-tighter">SUPABASE: {dbStatus.toUpperCase()}</h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{dbStatus === 'online' ? 'All systems nominal.' : 'Connectivity restricted. Local cache active.'}</p>
          </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-[2rem] shadow-xl border border-gray-100 relative overflow-hidden group hover:scale-[1.02] transition-transform">
+          <div key={i} className="bg-white p-6 rounded-[2rem] shadow-xl border border-gray-100 relative overflow-hidden group">
             <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${stat.color} opacity-5 rounded-full -translate-y-1/2 translate-x-1/2`}></div>
-            <div className="flex justify-between items-start mb-4">
-               <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg`}>
-                 <stat.icon size={24} />
-               </div>
-               <span className={`text-[10px] font-black px-2 py-1 rounded-full ${stat.trend === 'LIVE' ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600'}`}>
-                 {stat.trend}
-               </span>
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
-              <h3 className="text-3xl font-black italic text-gray-800 tracking-tighter">{stat.value}</h3>
-            </div>
+            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg mb-4`}><stat.icon size={24} /></div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
+            <h3 className="text-3xl font-black italic text-gray-800 tracking-tighter">{stat.value}</h3>
           </div>
         ))}
       </div>
@@ -306,44 +254,23 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
            <div className="bg-white p-2 rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden relative group">
-              <div className="absolute top-6 left-6 z-20 pointer-events-none">
-                 <div className="bg-black text-white px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/20 backdrop-blur-md">
-                    <Radio size={16} className="text-yellow-400 animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">Live Global Radar</span>
-                 </div>
-              </div>
               <div className="h-[450px] rounded-[2rem] overflow-hidden relative">
                  <div id="admin-radar-map" ref={mapContainerRef} className="h-full w-full absolute inset-0 z-0" />
               </div>
            </div>
         </div>
-
-        <div className="bg-black text-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col h-full border border-gray-800">
-           <div className="p-6 bg-gradient-to-r from-gray-900 to-black border-b border-gray-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                 <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center">
-                    <Zap size={18} className="text-black" />
-                 </div>
-                 <h3 className="text-sm font-black italic uppercase tracking-widest">Live Ledger</h3>
-              </div>
-              <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+        <div className="bg-black text-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col border border-gray-800">
+           <div className="p-6 border-b border-gray-800 flex items-center justify-between">
+              <div className="flex items-center gap-3"><Zap size={18} className="text-yellow-400" /><h3 className="text-sm font-black italic uppercase tracking-widest">Live Ledger</h3></div>
            </div>
-           
-           <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide max-h-[400px]">
+           <div className="flex-1 overflow-y-auto p-6 space-y-6 max-h-[400px]">
               {transactions.slice(-10).reverse().map(tx => (
-                <div key={tx.id} className="flex gap-4 group animate-fade-in">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/5 border border-white/10 group-hover:bg-white/10 transition-colors`}>
-                    <DollarSign size={16} className="text-yellow-400" />
-                  </div>
+                <div key={tx.id} className="flex gap-4 group">
                   <div className="flex-1 min-w-0">
                      <p className="text-xs font-black text-gray-200 uppercase tracking-tighter truncate">{tx.description}</p>
                      <p className="text-[10px] text-gray-500 uppercase font-bold">{new Date(tx.createdAt).toLocaleTimeString()}</p>
                   </div>
-                  <div className="text-right">
-                    <p className={`text-xs font-black italic ${tx.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                       {tx.amount > 0 ? '+' : ''}₱{Math.abs(tx.amount).toFixed(0)}
-                    </p>
-                  </div>
+                  <p className={`text-xs font-black italic ${tx.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>₱{Math.abs(tx.amount).toFixed(0)}</p>
                 </div>
               ))}
            </div>
@@ -355,117 +282,40 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
   const renderUsers = () => {
     let filteredRiders = riders.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
     let filteredPass = passengers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
     if (userFilter === 'flagged') {
       filteredRiders = filteredRiders.filter(r => r.isFlagged);
       filteredPass = filteredPass.filter(p => p.isFlagged);
     }
-
     return (
       <div className="space-y-8 animate-fade-in">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-           <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search name, phone or vehicle..." 
-                className="w-full pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 font-bold text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-           </div>
+        <div className="flex gap-4 items-center">
+           <div className="relative flex-1"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} /><input type="text" placeholder="Search users..." className="w-full pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
            <div className="flex bg-gray-100 p-1 rounded-xl shadow-inner border border-gray-200">
-              <button 
-                onClick={() => setUserFilter('all')}
-                className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${userFilter === 'all' ? 'bg-black text-white shadow-lg scale-105' : 'text-gray-500 hover:text-black'}`}
-              >
-                All Users
-              </button>
-              <button 
-                onClick={() => setUserFilter('flagged')}
-                className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${userFilter === 'flagged' ? 'bg-red-500 text-white shadow-lg scale-105' : 'text-gray-500 hover:text-red-600'}`}
-              >
-                Flagged
-              </button>
+              <button onClick={() => setUserFilter('all')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${userFilter === 'all' ? 'bg-black text-white' : 'text-gray-500'}`}>All Users</button>
+              <button onClick={() => setUserFilter('flagged')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${userFilter === 'flagged' ? 'bg-red-500 text-white' : 'text-gray-500'}`}>Flagged</button>
            </div>
         </div>
-
         <div className="grid lg:grid-cols-2 gap-8">
            <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
-              <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                 <h3 className="text-sm font-black italic uppercase tracking-widest flex items-center gap-2">
-                   <Truck size={16} className="text-gray-400" /> Riders
-                 </h3>
-                 <span className="bg-black text-yellow-400 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter">{filteredRiders.length} FOUND</span>
-              </div>
+              <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between"><h3 className="text-sm font-black italic uppercase tracking-widest">Riders</h3><span className="bg-black text-yellow-400 text-[8px] font-black px-2 py-0.5 rounded uppercase">{filteredRiders.length}</span></div>
               <div className="divide-y divide-gray-50">
                  {filteredRiders.map(rider => (
-                   <div key={rider.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-3">
-                         <img src={`https://picsum.photos/seed/${rider.id}/40/40`} className={`w-10 h-10 rounded-xl transition-all ${rider.isFlagged ? 'border-2 border-red-500 ring-4 ring-red-50 shadow-lg' : 'grayscale hover:grayscale-0'}`} alt="Rider" />
-                         <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs font-black uppercase tracking-tight">{rider.name}</p>
-                              {rider.isFlagged && <span className="bg-red-100 text-red-600 text-[6px] font-black px-1 rounded border border-red-200 uppercase tracking-widest">FLAGGED</span>}
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-bold">{rider.phone} • {rider.vehicle.plateNumber}</p>
-                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                         <div className="text-right">
-                            <div className="flex items-center gap-0.5 justify-end">
-                               <Star size={8} className="text-yellow-500 fill-yellow-500" />
-                               <span className="text-[10px] font-black">{rider.rating}</span>
-                            </div>
-                            <p className="text-[10px] font-bold text-green-600 uppercase tracking-tighter">₱{rider.currentBalance.toFixed(0)} WALLET</p>
-                         </div>
-                         <button 
-                            onClick={() => toggleFlag(rider.id, 'rider')}
-                            title={rider.isFlagged ? "Unflag User" : "Flag User"}
-                            className={`p-2 rounded-xl transition-all active:scale-90 ${rider.isFlagged ? 'bg-red-500 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-red-500 hover:text-white hover:shadow-lg'}`}
-                         >
-                            <AlertTriangle size={14} />
-                         </button>
-                      </div>
+                   <div key={rider.id} className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3"><img src={`https://picsum.photos/seed/${rider.id}/40/40`} className={`w-10 h-10 rounded-xl ${rider.isFlagged ? 'border-2 border-red-500' : ''}`} alt="Rider" /><div><p className="text-xs font-black uppercase tracking-tight">{rider.name}</p><p className="text-[10px] text-gray-400 font-bold">{rider.phone}</p></div></div>
+                      <button onClick={() => toggleFlag(rider.id, 'rider')} className={`p-2 rounded-xl ${rider.isFlagged ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-400'}`}><AlertTriangle size={14} /></button>
                    </div>
                  ))}
-                 {filteredRiders.length === 0 && <div className="p-10 text-center opacity-20 italic font-bold">No riders found.</div>}
               </div>
            </div>
-
            <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
-              <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                 <h3 className="text-sm font-black italic uppercase tracking-widest flex items-center gap-2">
-                   <Users size={16} className="text-gray-400" /> Passengers
-                 </h3>
-                 <span className="bg-black text-white text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter">{filteredPass.length} ACTIVE</span>
-              </div>
+              <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between"><h3 className="text-sm font-black italic uppercase tracking-widest">Passengers</h3><span className="bg-black text-white text-[8px] font-black px-2 py-0.5 rounded uppercase">{filteredPass.length}</span></div>
               <div className="divide-y divide-gray-50">
                  {filteredPass.map(pass => (
-                   <div key={pass.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-3">
-                         <img src={`https://picsum.photos/seed/${pass.id}/40/40`} className={`w-10 h-10 rounded-xl transition-all ${pass.isFlagged ? 'border-2 border-red-500 ring-4 ring-red-50 shadow-lg' : 'grayscale hover:grayscale-0'}`} alt="Pass" />
-                         <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs font-black uppercase tracking-tight">{pass.name}</p>
-                              {pass.isFlagged && <span className="bg-red-100 text-red-600 text-[6px] font-black px-1 rounded border border-red-200 uppercase tracking-widest">FLAGGED</span>}
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-bold">{pass.phone}</p>
-                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                         <p className="text-xs font-black italic uppercase tracking-tighter">₱{pass.currentBalance.toFixed(0)}</p>
-                         <button 
-                            onClick={() => toggleFlag(pass.id, 'passenger')}
-                            title={pass.isFlagged ? "Unflag User" : "Flag User"}
-                            className={`p-2 rounded-xl transition-all active:scale-90 ${pass.isFlagged ? 'bg-red-500 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-red-500 hover:text-white hover:shadow-lg'}`}
-                         >
-                            <AlertTriangle size={14} />
-                         </button>
-                      </div>
+                   <div key={pass.id} className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3"><img src={`https://picsum.photos/seed/${pass.id}/40/40`} className={`w-10 h-10 rounded-xl ${pass.isFlagged ? 'border-2 border-red-500' : ''}`} alt="Pass" /><div><p className="text-xs font-black uppercase tracking-tight">{pass.name}</p><p className="text-[10px] text-gray-400 font-bold">{pass.phone}</p></div></div>
+                      <button onClick={() => toggleFlag(pass.id, 'passenger')} className={`p-2 rounded-xl ${pass.isFlagged ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-400'}`}><AlertTriangle size={14} /></button>
                    </div>
                  ))}
-                 {filteredPass.length === 0 && <div className="p-10 text-center opacity-20 italic font-bold">No passengers found.</div>}
               </div>
            </div>
         </div>
@@ -473,30 +323,18 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
     );
   };
 
-  const renderReports = () => {
-    return (
-      <div className="space-y-8 animate-fade-in relative">
+  const renderReports = () => (
+    <div className="space-y-8 animate-fade-in relative">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
-              <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
-                <TrendingUp size={24} className="text-green-500" /> Revenue Velocity
-              </h3>
+              <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2"><TrendingUp size={24} className="text-green-500" /> Revenue Velocity</h3>
               <div className="h-[300px]">
                  <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData}>
-                       <defs>
-                         <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                           <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                           <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                         </linearGradient>
-                       </defs>
                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
-                       <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
-                       <Tooltip 
-                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 'bold' }} 
-                       />
-                       <Area type="monotone" dataKey="rev" stroke="#22c55e" strokeWidth={4} fill="url(#colorRev)" />
+                       <XAxis dataKey="name" hide />
+                       <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontWeight: 'bold' }} />
+                       <Area type="monotone" dataKey="rev" stroke="#22c55e" strokeWidth={4} fill="#22c55e33" />
                     </AreaChart>
                  </ResponsiveContainer>
               </div>
@@ -504,186 +342,69 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
 
            <div className="bg-black p-8 rounded-[2.5rem] shadow-2xl text-white overflow-hidden flex flex-col h-full border border-gray-800">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-black italic uppercase tracking-tighter text-yellow-400 flex items-center gap-3">
-                  <Zap size={24} className="text-yellow-400" /> Operational Queue
-                </h3>
-                <span className="bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-full animate-pulse">
-                  {loadRequests.filter(r => r.status === 'pending').length} ACTION REQUIRED
-                </span>
+                <h3 className="text-xl font-black italic uppercase tracking-tighter text-yellow-400">Operational Queue</h3>
+                <span className="bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-full">{loadRequests.filter(r => r.status === 'pending').length} PENDING</span>
               </div>
-              
-              <div className="space-y-4 overflow-y-auto scrollbar-hide flex-1">
-                 {loadRequests.filter(r => r.status === 'pending').length === 0 ? (
-                   <div className="py-20 text-center flex flex-col items-center gap-4 opacity-30 italic">
-                      <CheckCircle2 size={48} className="text-green-400" />
-                      <p className="font-bold uppercase tracking-widest text-xs">All load requests cleared.</p>
-                   </div>
-                 ) : (
-                   loadRequests.filter(r => r.status === 'pending').map(req => {
-                      const rider = riders.find(r => r.id === req.riderId);
-                      return (
-                        <div 
-                          key={req.id} 
-                          onClick={() => setActiveSupportRequest(req)}
-                          className={`p-5 bg-white/5 border rounded-3xl cursor-pointer transition-all hover:bg-white/10 group ${
-                            activeSupportRequest?.id === req.id ? 'border-yellow-400 bg-white/10 ring-4 ring-yellow-400/20' : 'border-white/10'
-                          }`}
-                        >
-                           <div className="flex justify-between items-start">
-                              <div className="flex items-center gap-4">
-                                 <img src={`https://picsum.photos/seed/${req.riderId}/40/40`} className="w-10 h-10 rounded-xl border-2 border-white/20" alt="Rider" />
-                                 <div>
-                                    <p className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">Load Request</p>
-                                    <p className="text-sm font-black italic text-white uppercase tracking-tighter">{rider?.name || 'Unknown Rider'}</p>
-                                 </div>
-                              </div>
-                              <div className="text-right">
-                                 <p className="text-xl font-black text-green-400 italic leading-none">₱{req.amount}</p>
-                                 <p className="text-[8px] text-gray-500 uppercase font-bold mt-1">Pending approval</p>
-                              </div>
-                           </div>
-                           <div className="flex justify-between items-center mt-4 pt-3 border-t border-white/5">
-                              <div className="flex items-center gap-1.5">
-                                 <MessageSquare size={12} className="text-yellow-400" />
-                                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-yellow-400 transition-colors">Open Support Chat</span>
-                              </div>
-                              <p className="text-[8px] text-gray-600 font-bold">{new Date(req.createdAt).toLocaleTimeString()}</p>
-                           </div>
-                        </div>
-                      );
-                   })
-                 )}
-              </div>
-           </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden mt-8">
-           <h3 className="text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
-             <Activity size={24} className="text-indigo-500" /> Recent Platform Activity
-           </h3>
-           <div className="space-y-4">
-              {rides.slice(-10).map(ride => (
-                <div key={ride.id} className="flex items-center justify-between p-5 bg-gray-50 rounded-3xl border border-gray-100 hover:bg-white hover:shadow-lg transition-all">
-                   <div className="flex items-center gap-5">
-                      <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center text-yellow-400 font-black italic shadow-lg">M</div>
-                      <div>
-                         <div className="flex items-center gap-2 mb-1">
-                            <p className="text-xs font-black uppercase tracking-tight">Mission {ride.id.substring(0, 5)}</p>
-                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
-                              ride.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
-                            }`}>{ride.status}</span>
+              <div className="space-y-4 overflow-y-auto flex-1">
+                 {loadRequests.filter(r => r.status === 'pending').map(req => {
+                    const rider = riders.find(r => r.id === req.riderId);
+                    return (
+                      <div key={req.id} onClick={() => setActiveSupportRequest(req)} className={`p-5 bg-white/5 border rounded-3xl cursor-pointer transition-all ${activeSupportRequest?.id === req.id ? 'border-yellow-400' : 'border-white/10'}`}>
+                         <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-4"><img src={`https://picsum.photos/seed/${req.riderId}/40/40`} className="w-10 h-10 rounded-xl" alt="Rider" /><div><p className="text-[10px] font-black uppercase text-yellow-400">Load Request</p><p className="text-sm font-black italic text-white">{rider?.name || 'Rider'}</p></div></div>
+                            <p className="text-xl font-black text-green-400 italic">₱{req.amount}</p>
                          </div>
-                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{ride.pickupLocation.placeName} → {ride.destination.placeName}</p>
                       </div>
-                   </div>
-                   <div className="text-right">
-                      <p className="text-sm font-black italic text-gray-800 tracking-tighter leading-none">₱{ride.totalFare.toFixed(0)}</p>
-                      <p className="text-[8px] text-gray-400 font-bold mt-1 uppercase">{new Date(ride.createdAt).toLocaleDateString()}</p>
-                   </div>
-                </div>
-              ))}
-              {rides.length === 0 && <div className="py-20 text-center opacity-30 italic font-bold">No missions recorded.</div>}
+                    );
+                 })}
+              </div>
            </div>
         </div>
-      </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <div className="max-w-full mx-auto pb-20 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div className="flex flex-col">
-           <div className="flex items-center gap-4">
-             <h2 className="text-3xl font-black italic tracking-tighter uppercase text-gray-800">COMMAND CENTER</h2>
-             {dbStatus === 'online' && <span className="flex items-center gap-1.5 bg-green-50 text-green-600 px-3 py-1 rounded-full text-[10px] font-black uppercase"><Globe size={12}/> LIVE SYNC</span>}
-           </div>
-           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Real-time Platform Orchestration</p>
-        </div>
+        <h2 className="text-3xl font-black italic tracking-tighter uppercase text-gray-800">COMMAND CENTER</h2>
         <div className="flex gap-2">
-           <button 
-            onClick={() => setShowEmergencyModal(true)}
-            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 transition-all active:scale-95"
-           >
-              <ShieldAlert size={16} /> BROADCAST EMERGENCY
-           </button>
-           <button className="bg-black text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 hover:bg-gray-900 transition-all active:scale-95">
-              <Download size={16} /> DOWNLOAD REPORT
-           </button>
+           <button onClick={() => setShowEmergencyModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-xl flex items-center gap-2"><ShieldAlert size={16} /> EMERGENCY</button>
+           <button className="bg-black text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-xl flex items-center gap-2"><Download size={16} /> REPORT</button>
         </div>
       </div>
-
       {activeTab === 'dashboard' && renderDashboard()}
       {activeTab === 'users' && renderUsers()}
       {activeTab === 'reports' && renderReports()}
 
       {showEmergencyModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
-            <div className="bg-red-600 p-6 flex items-center gap-4 text-white">
-              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center animate-pulse">
-                <ShieldAlert size={28} />
-              </div>
-              <div>
-                <h3 className="text-xl font-black italic uppercase tracking-tighter">Emergency Broadcast</h3>
-              </div>
-              <button onClick={() => setShowEmergencyModal(false)} className="ml-auto text-white/60 hover:text-white">
-                <X size={24} />
-              </button>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8">
+            <h3 className="text-xl font-black italic uppercase tracking-tighter mb-4 text-red-600">Emergency Broadcast</h3>
+            <textarea value={emergencyText} onChange={(e) => setEmergencyText(e.target.value)} placeholder="Message..." className="w-full h-32 bg-gray-50 border border-gray-100 rounded-2xl p-4 font-bold text-sm" />
+            <div className="grid grid-cols-3 gap-3 my-4">
+                {['low', 'medium', 'high'].map(sev => <button key={sev} onClick={() => setEmergencySeverity(sev as any)} className={`py-3 rounded-xl text-[10px] font-black uppercase border-2 ${emergencySeverity === sev ? 'bg-black text-white border-black' : 'bg-white'}`}>{sev}</button>)}
             </div>
-            <div className="p-8 space-y-6">
-              <textarea 
-                  value={emergencyText}
-                  onChange={(e) => setEmergencyText(e.target.value)}
-                  placeholder="Broadcast message..."
-                  className="w-full h-32 bg-gray-50 border border-gray-100 rounded-2xl p-4 font-bold text-sm focus:outline-none"
-              />
-              <div className="grid grid-cols-3 gap-3">
-                  {(['low', 'medium', 'high'] as const).map(sev => (
-                    <button key={sev} onClick={() => setEmergencySeverity(sev)} className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${emergencySeverity === sev ? 'bg-black text-white border-black' : 'bg-white text-gray-400'}`}>{sev}</button>
-                  ))}
-              </div>
-              <button onClick={handleBroadcastEmergency} className="w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Send Broadcast</button>
-            </div>
+            <button onClick={handleBroadcastEmergency} className="w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Send Broadcast</button>
+            <button onClick={() => setShowEmergencyModal(false)} className="w-full mt-2 font-black uppercase text-xs text-gray-400">Cancel</button>
           </div>
         </div>
       )}
 
       {activeSupportRequest && (
         <div className="fixed bottom-0 right-0 left-0 md:left-64 z-[100] p-4 pointer-events-none">
-          <div className="bg-white rounded-[3rem] shadow-2xl border-4 border-black overflow-hidden flex flex-col h-[550px] animate-slide-up pointer-events-auto max-w-4xl mx-auto">
+          <div className="bg-white rounded-[3rem] shadow-2xl border-4 border-black overflow-hidden flex flex-col h-[550px] pointer-events-auto max-w-4xl mx-auto">
             <div className="bg-black p-6 flex items-center justify-between text-white">
-              <div className="flex items-center gap-5">
-                <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-black">
-                   <Users size={28} />
-                </div>
-                <div>
-                   <h3 className="text-lg font-black italic uppercase tracking-widest text-yellow-400">MISSION CONTROL SUPPORT</h3>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                 <button onClick={() => approveRequest(activeSupportRequest)} className="bg-green-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase">Approve Load</button>
-                 <button onClick={() => setActiveSupportRequest(null)} className="bg-white/10 p-3 rounded-2xl"><X size={24} /></button>
-              </div>
+              <h3 className="text-lg font-black italic uppercase tracking-widest text-yellow-400">SUPPORT CHAT</h3>
+              <div className="flex gap-3"><button onClick={() => approveRequest(activeSupportRequest)} className="bg-green-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase">Approve Load</button><button onClick={() => setActiveSupportRequest(null)} className="bg-white/10 p-3 rounded-2xl"><X size={24} /></button></div>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-gray-50/50">
                {activeSupportRequest.messages.map(msg => (
-                 <div key={msg.id} className={`flex ${msg.senderId === 'admin' ? 'justify-end' : 'justify-start'}`}>
-                   <div className={`max-w-[65%] p-5 rounded-[2rem] shadow-xl text-sm font-bold ${msg.senderId === 'admin' ? 'bg-black text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.text}</div>
-                 </div>
+                 <div key={msg.id} className={`flex ${msg.senderId === 'admin' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[65%] p-5 rounded-[2rem] shadow-xl text-sm font-bold ${msg.senderId === 'admin' ? 'bg-black text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.text}</div></div>
                ))}
                <div ref={chatEndRef} />
             </div>
-
             <div className="p-4 bg-white border-t flex gap-4">
-                 <input 
-                   type="text" 
-                   value={supportMessage}
-                   onChange={(e) => setSupportMessage(e.target.value)}
-                   placeholder="Reply..."
-                   className="w-full bg-gray-100 border rounded-[2rem] px-8 py-5 font-black text-sm outline-none"
-                   onKeyPress={(e) => e.key === 'Enter' && sendSupportMessage()}
-                 />
+                 <input type="text" value={supportMessage} onChange={(e) => setSupportMessage(e.target.value)} placeholder="Reply..." className="w-full bg-gray-100 border rounded-[2rem] px-8 py-5 font-black text-sm outline-none" onKeyPress={(e) => e.key === 'Enter' && sendSupportMessage()} />
                  <button onClick={sendSupportMessage} className="bg-black text-yellow-400 p-3 rounded-full"><Send size={20} /></button>
             </div>
           </div>
