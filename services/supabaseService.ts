@@ -146,7 +146,7 @@ export const supabaseService = {
       return { id: 'admin-fixed', username: 'admin', name: 'System Admin', phone: '000', userType: 'admin', createdAt: new Date().toISOString(), isActive: true };
     }
     try {
-      const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('username', username).eq('user_type', type).single();
+      const { data, error } = await supabase.from('profiles').select('*, rider_details(*)').eq('username', username).eq('password', password).eq('user_type', type).single();
       if (error || !data) return null;
       if (type === 'rider') return mapRiderFromDB(data);
       if (type === 'passenger') return mapPassengerFromDB(data);
@@ -157,6 +157,7 @@ export const supabaseService = {
   async register(data: any, type: UserType) {
     const { data: profile, error: profileError } = await supabase.from('profiles').insert({
       username: data.username,
+      password: data.password, // Correctly include password in the insert
       full_name: data.name,
       phone: data.phone,
       user_type: type,
@@ -261,14 +262,12 @@ export const supabaseService = {
     return !rideError;
   },
 
-  // Fix: Added missing getAllTransactions method
   async getAllTransactions(): Promise<Transaction[]> {
     const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
     if (error || !data) return [];
     return data.map(mapTransactionFromDB);
   },
 
-  // Fix: Added missing getAllLoadRequests method
   async getAllLoadRequests(): Promise<LoadRequest[]> {
     const { data, error } = await supabase.from('load_requests').select('*').order('created_at', { ascending: false });
     if (error || !data) return [];
