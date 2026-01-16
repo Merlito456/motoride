@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Rider, Ride, Bid, Coordinates, LoadRequest } from '../types';
 import { mockBackend } from '../services/mockBackend';
+// Import ConnectionStatus from supabaseService
+import { ConnectionStatus } from '../services/supabaseService';
 import { 
   Power, MapPin, Navigation, DollarSign, Star, 
   TrendingUp, Bell, CheckCircle, Package, ArrowLeft,
@@ -11,7 +13,8 @@ import {
   CreditCard, Calendar, PlusCircle, Send, X, Gavel, Download, FileCheck
 } from 'lucide-react';
 
-const RiderPortal: React.FC<{ user: Rider, activeTab: string }> = ({ user, activeTab }) => {
+// Update RiderPortal props to include dbStatus to resolve TypeScript assignment error in App.tsx
+const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: ConnectionStatus }> = ({ user, activeTab, dbStatus }) => {
   const [riderData, setRiderData] = useState<Rider>(user);
   const [rides, setRides] = useState<Ride[]>([]);
   const [online, setOnline] = useState(user.isOnline);
