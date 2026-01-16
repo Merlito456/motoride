@@ -70,7 +70,6 @@ const App: React.FC = () => {
         try {
           mockBackend.initialize();
           
-          // Safety timeout for the entire initialization process
           const initTimeout = new Promise<void>((resolve) => setTimeout(resolve, 3500));
           
           const performCheck = async () => {
@@ -87,7 +86,6 @@ const App: React.FC = () => {
             }
           };
 
-          // Run check but don't let it block the app for more than 3.5s
           await Promise.race([performCheck(), initTimeout]);
         } catch (globalE) {
           console.error("Global init failure", globalE);
@@ -98,13 +96,6 @@ const App: React.FC = () => {
     };
     initializeApp();
   }, []);
-
-  const handleQuickLogin = (role: UserType, user: string) => {
-    setAuthRole(role);
-    setUsername(user);
-    setPassword('password');
-    setView('login');
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,7 +117,7 @@ const App: React.FC = () => {
           setCurrentUser(mockUser);
           setActiveTab(mockUser.userType === 'admin' ? 'dashboard' : 'home');
         } else {
-          setError('User not found. Try Quick Login for the prototype accounts.');
+          setError('Invalid credentials. Please check your username and password or register a new account.');
         }
     } catch (err: any) {
         setError(err.message || 'Login failed.');
@@ -198,18 +189,16 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-yellow-200">
-        {/* Status Banner */}
         <div className={`text-white text-[10px] font-black uppercase tracking-[0.2em] py-2 px-8 flex items-center justify-center gap-3 animate-slide-down ${
           dbStatus === 'online' ? 'bg-green-600' : 'bg-black'
         }`}>
            {dbStatus === 'online' ? (
              <><Globe size={14} /> Systems Online: Live Database Sync Active</>
            ) : (
-             <><Database size={14} /> Prototype Mode: Using Project Local Storage (qsbiquxhkvoyatlrqjfj)</>
+             <><Database size={14} /> Prototype Mode: Local Storage Storage (qsbiquxhkvoyatlrqjfj)</>
            )}
         </div>
 
-        {/* Navbar */}
         <nav className="fixed top-8 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 h-20 flex items-center justify-between px-8">
            <div onClick={() => setView('landing')} className="flex items-center gap-3 cursor-pointer group">
               <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shadow-lg rotate-3 group-hover:rotate-0 transition-transform">
@@ -225,7 +214,6 @@ const App: React.FC = () => {
 
         {view === 'landing' && (
           <div className="pt-28">
-            {/* Hero */}
             <section className="px-8 py-20 flex flex-col items-center text-center space-y-8 bg-gradient-to-b from-yellow-50/50 to-white">
                <div className="inline-flex items-center gap-2 bg-yellow-400 text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl shadow-yellow-200">
                   <Zap size={14} /> The Future of Transit
@@ -244,7 +232,6 @@ const App: React.FC = () => {
                </div>
             </section>
 
-            {/* Features */}
             <section className="px-8 py-24 max-w-7xl mx-auto space-y-20">
                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
                   {[
@@ -261,7 +248,6 @@ const App: React.FC = () => {
                   ))}
                </div>
 
-               {/* Advantage */}
                <div className="bg-black rounded-[3rem] p-12 text-white flex flex-col md:flex-row items-center gap-12 shadow-2xl relative group">
                   <div className="flex-1 space-y-6">
                      <h4 className="text-4xl font-black italic tracking-tighter uppercase">The Motoride Advantage</h4>
@@ -282,7 +268,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Documentation Sections */}
         {view === 'safety' && <StaticContentPage title="Safety Protocols" icon={ShieldCheck} onBack={() => setView('landing')}><p>Strict vetting and real-time SOS systems protect every trip.</p></StaticContentPage>}
         {view === 'pricing' && <StaticContentPage title="Pricing Model" icon={DollarSign} onBack={() => setView('landing')}><p>₱40 Base + ₱12/KM. Transparent and regulated.</p></StaticContentPage>}
         {view === 'areas' && <StaticContentPage title="Service Areas" icon={MapPin} onBack={() => setView('landing')}><p>Operating in Metro Manila, Cebu, and Davao.</p></StaticContentPage>}
@@ -299,16 +284,6 @@ const App: React.FC = () => {
                </div>
 
                <div className="p-12 space-y-8">
-                  {/* Quick Login */}
-                  <div className="bg-yellow-50 border-2 border-dashed border-yellow-200 p-6 rounded-3xl space-y-3">
-                    <p className="text-[10px] font-black uppercase text-yellow-700 tracking-widest text-center">Quick Portal Login</p>
-                    <div className="grid grid-cols-3 gap-2">
-                       <button onClick={() => handleQuickLogin('passenger', 'passenger1')} className="bg-white p-2 rounded-xl text-[10px] font-black hover:bg-yellow-100 transition-colors">Passenger</button>
-                       <button onClick={() => handleQuickLogin('rider', 'rider1')} className="bg-white p-2 rounded-xl text-[10px] font-black hover:bg-yellow-100 transition-colors">Rider</button>
-                       <button onClick={() => handleQuickLogin('admin', 'admin')} className="bg-white p-2 rounded-xl text-[10px] font-black hover:bg-yellow-100 transition-colors">Admin</button>
-                    </div>
-                  </div>
-
                   <form onSubmit={view === 'login' ? handleLogin : handleRegister} className="space-y-6">
                      <div className="flex bg-gray-100 p-1 rounded-2xl">
                         {['passenger', 'rider', 'admin'].map(role => (
@@ -318,9 +293,28 @@ const App: React.FC = () => {
 
                      {error && <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold flex items-center gap-2"><ShieldAlert size={16}/> {error}</div>}
 
+                     {view === 'register' && (
+                       <>
+                         <input required type="text" placeholder="Full Name" className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold" value={fullName} onChange={e => setFullName(e.target.value)} />
+                         <input required type="tel" placeholder="Phone Number" className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold" value={phone} onChange={e => setPhone(e.target.value)} />
+                       </>
+                     )}
+
                      <input required type="text" placeholder="Username" className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold" value={username} onChange={e => setUsername(e.target.value)} />
                      <input required type="password" placeholder="Password" className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold" value={password} onChange={e => setPassword(e.target.value)} />
                      
+                     {view === 'register' && authRole === 'rider' && (
+                       <div className="space-y-4 p-4 bg-gray-50 rounded-3xl border border-gray-100">
+                         <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-2">Vehicle Verification</p>
+                         <input required type="text" placeholder="Driver's License No." className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm" value={licenseNo} onChange={e => setLicenseNo(e.target.value)} />
+                         <input required type="text" placeholder="OR/CR Registration No." className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm" value={orCrNo} onChange={e => setOrCrNo(e.target.value)} />
+                         <div className="grid grid-cols-2 gap-3">
+                            <input required type="text" placeholder="Motor Model" className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm" value={motorModel} onChange={e => setMotorModel(e.target.value)} />
+                            <input required type="text" placeholder="Plate Number" className="w-full px-4 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm" value={plateNo} onChange={e => setPlateNo(e.target.value)} />
+                         </div>
+                       </div>
+                     )}
+
                      <button type="submit" disabled={loading} className="w-full bg-black text-white py-5 rounded-2xl font-black italic text-xl uppercase shadow-xl hover:bg-gray-900 transition-all">
                        {loading ? 'Processing...' : view === 'login' ? 'Login' : 'Register'}
                      </button>
