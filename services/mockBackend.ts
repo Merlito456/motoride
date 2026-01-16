@@ -1,5 +1,4 @@
 
-// Added UserType to the imports from '../types'
 import { Ride, Bid, Rider, Passenger, User, Transaction, Coordinates, RideStatus, LoadRequest, ChatMessage, EmergencyAlert, UserType, SavedLocation } from '../types';
 import { FARE_CONFIG } from '../constants';
 
@@ -20,59 +19,10 @@ const load = (key: string, defaultValue: any) => {
   return item ? JSON.parse(item) : defaultValue;
 };
 
-const initialRiders: Rider[] = [
-  {
-    id: 'rider-1',
-    name: 'Juan Dela Cruz',
-    username: 'rider1',
-    password: 'password',
-    phone: '09171234567',
-    userType: 'rider',
-    createdAt: new Date().toISOString(),
-    isActive: true,
-    isFlagged: false,
-    isOnline: true,
-    isAvailable: true,
-    rating: 4.8,
-    totalRides: 156,
-    totalEarnings: 8500,
-    currentBalance: 500,
-    licenseNumber: 'N01-23-456789',
-    governmentLicenseId: 'PH-1234-5678',
-    currentLocation: { latitude: 14.53, longitude: 120.98 },
-    vehicle: {
-      id: 'v-1',
-      plateNumber: 'ABC 1234',
-      vehicleType: 'motorcycle',
-      brand: 'Honda',
-      model: 'Click 125i',
-      color: 'Matte Black',
-      year: 2023,
-      capacity: 1
-    }
-  }
-];
-
-const initialPassengers: Passenger[] = [
-  {
-    id: 'pass-1',
-    name: 'Maria Clara',
-    username: 'passenger1',
-    password: 'password',
-    phone: '09191112222',
-    userType: 'passenger',
-    createdAt: new Date().toISOString(),
-    isActive: true,
-    isFlagged: false,
-    currentBalance: 1000,
-    preferredPaymentMethod: 'cash'
-  }
-];
-
 export const mockBackend = {
   initialize: () => {
-    if (!localStorage.getItem(STORAGE_KEYS.RIDERS)) save(STORAGE_KEYS.RIDERS, initialRiders);
-    if (!localStorage.getItem(STORAGE_KEYS.PASSENGERS)) save(STORAGE_KEYS.PASSENGERS, initialPassengers);
+    if (!localStorage.getItem(STORAGE_KEYS.RIDERS)) save(STORAGE_KEYS.RIDERS, []);
+    if (!localStorage.getItem(STORAGE_KEYS.PASSENGERS)) save(STORAGE_KEYS.PASSENGERS, []);
     if (!localStorage.getItem(STORAGE_KEYS.RIDES)) save(STORAGE_KEYS.RIDES, []);
     if (!localStorage.getItem(STORAGE_KEYS.BIDS)) save(STORAGE_KEYS.BIDS, []);
     if (!localStorage.getItem(STORAGE_KEYS.TRANSACTIONS)) save(STORAGE_KEYS.TRANSACTIONS, []);
