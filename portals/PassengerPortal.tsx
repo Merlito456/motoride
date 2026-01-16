@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Passenger, Ride, RideStatus, Coordinates, Bid, Transaction, SavedLocation } from '../types';
 import { mockBackend } from '../services/mockBackend';
+import { supabaseService, ConnectionStatus } from '../services/supabaseService';
 import { MOCK_LOCATIONS, FARE_CONFIG } from '../constants';
-import { ConnectionStatus } from '../services/supabaseService';
 import { 
   MapPin, Navigation, Search, DollarSign, Star, 
   ShieldCheck, History, Wallet, LocateFixed, Map as MapIcon,
@@ -115,104 +115,31 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
   }, [pickup, destination]);
 
   useEffect(() => {
-    if (!mapRef.current) return;
-
-    const onMapClick = (e: L.LeafletMouseEvent) => {
-      if (!selectionMode) return;
-
-      const newCoord: Coordinates = {
-        latitude: e.latlng.lat,
-        longitude: e.latlng.lng,
-        placeName: selectionMode === 'pickup' ? 'Pinned Pickup' : 'Pinned Destination',
-        address: `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`
-      };
-
-      if (selectionMode === 'pickup') {
-        setPickup(newCoord);
-        setSelectionMode(null);
+    const fetchActiveRide = async () => {
+      let currentRide: Ride | null = null;
+      
+      if (dbStatus === 'online') {
+        const all = await supabaseService.getAllRides();
+        currentRide = all.find(r => r.passengerId === user.id && r.status !== 'completed' && r.status !== 'cancelled') || null;
       } else {
-        setDestination(newCoord);
-        setSelectionMode(null);
+        const rides = mockBackend.getRides().filter(r => r.passengerId === user.id);
+        currentRide = rides.find(r => r.status !== 'completed' && r.status !== 'cancelled') || null;
       }
+      
+      setActiveRide(currentRide);
     };
 
-    mapRef.current.on('click', onMapClick);
-    return () => {
-      mapRef.current?.off('click', onMapClick);
-    };
-  }, [selectionMode]);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    const createIcon = (color: string, icon: string) => L.divIcon({
-      className: 'custom-div-icon',
-      html: `
-        <div class="flex flex-col items-center -translate-y-1/2 scale-75">
-          <div class="bg-${color}-600 text-white p-2 rounded-full shadow-lg border-2 border-white mb-1">
-             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${icon}"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-          </div>
-        </div>
-      `,
-      iconSize: [30, 30],
-      iconAnchor: [15, 15]
-    });
-
-    if (pickup) {
-      if (!pickupMarkerRef.current) {
-        pickupMarkerRef.current = L.marker([pickup.latitude, pickup.longitude], { icon: createIcon('blue', 'map-pin') }).addTo(mapRef.current);
-      } else {
-        pickupMarkerRef.current.setLatLng([pickup.latitude, pickup.longitude]);
-      }
-    } else if (pickupMarkerRef.current) {
-      pickupMarkerRef.current.remove();
-      pickupMarkerRef.current = null;
-    }
-
-    if (destination) {
-      if (!destinationMarkerRef.current) {
-        destinationMarkerRef.current = L.marker([destination.latitude, destination.longitude], { icon: createIcon('red', 'navigation') }).addTo(mapRef.current);
-      } else {
-        destinationMarkerRef.current.setLatLng([destination.latitude, destination.longitude]);
-      }
-    } else if (destinationMarkerRef.current) {
-      destinationMarkerRef.current.remove();
-      destinationMarkerRef.current = null;
-    }
-
-    if (polylineRef.current) polylineRef.current.remove();
-    
-    if (currentRoute.length > 0) {
-      polylineRef.current = L.polyline(currentRoute, { color: '#000', weight: 4, opacity: 0.8 }).addTo(mapRef.current);
-      if (!selectionMode && !activeRide) {
-         mapRef.current.fitBounds(polylineRef.current.getBounds().pad(0.3), { animate: true });
-      }
-    } else if (pickup && destination) {
-      const latlngs: [number, number][] = [[pickup.latitude, pickup.longitude], [destination.latitude, destination.longitude]];
-      polylineRef.current = L.polyline(latlngs, { color: '#000', weight: 2, dashArray: '5, 10', opacity: 0.4 }).addTo(mapRef.current);
-    }
-  }, [pickup, destination, currentRoute, selectionMode, activeRide]);
-
-  useEffect(() => {
-    const rides = mockBackend.getRides().filter(r => r.passengerId === user.id);
-    const inProgress = rides.find(r => r.status !== 'completed' && r.status !== 'cancelled');
-    if (inProgress) setActiveRide(inProgress);
-
-    const interval = setInterval(() => {
-      const allRides = mockBackend.getRides();
-      const updated = allRides.find(r => r.id === activeRide?.id);
-      if (updated) setActiveRide(updated);
-    }, 2000);
-
+    fetchActiveRide();
+    const interval = setInterval(fetchActiveRide, 2000);
     return () => clearInterval(interval);
-  }, [user.id, activeRide?.id]);
+  }, [user.id, dbStatus]);
 
-  const handleBookRide = () => {
+  const handleBookRide = async () => {
     if (!pickup || !destination) return;
     const dist = roadDistance;
     const baseFare = FARE_CONFIG.BASE_FARE + (dist * FARE_CONFIG.PER_KM_RATE);
     
-    const newRide = mockBackend.createRide({
+    const ridePayload: Partial<Ride> = {
       passengerId: user.id,
       pickupLocation: pickup,
       destination,
@@ -223,10 +150,43 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
       biddingEnabled,
       estimatedDuration: Math.round(dist * 2.5),
       paymentMethod: 'cash'
-    });
+    };
+
+    if (dbStatus === 'online') {
+      const newRide = await supabaseService.createRide(ridePayload);
+      setActiveRide(newRide);
+    } else {
+      const newRide = mockBackend.createRide(ridePayload);
+      setActiveRide(newRide);
+    }
     
-    setActiveRide(newRide);
     setSelectionMode(null);
+  };
+
+  const handleAcceptBid = async (bid: Bid) => {
+    if (!activeRide) return;
+    
+    if (dbStatus === 'online') {
+      const success = await supabaseService.acceptBid(activeRide.id, bid.id, bid.riderId, bid.bidAmount);
+      if (success) {
+        const updated = await supabaseService.getRideById(activeRide.id);
+        setActiveRide(updated);
+      }
+    } else {
+      mockBackend.acceptBid(activeRide.id, bid.id);
+      const updated = mockBackend.getRides().find(r => r.id === activeRide.id);
+      if (updated) setActiveRide(updated);
+    }
+  };
+
+  const handleCancelRide = async () => {
+    if (!activeRide) return;
+    if (dbStatus === 'online') {
+      await supabaseService.updateRideStatus(activeRide.id, 'cancelled');
+    } else {
+      mockBackend.updateRide(activeRide.id, { status: 'cancelled' });
+    }
+    setActiveRide(null);
   };
 
   const useCurrentLocation = (onlyCenterMap = false) => {
@@ -408,7 +368,6 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                     <LocationInput label="Pickup" value={pickup} type="pickup" />
                     <LocationInput label="Destination" value={destination} type="destination" />
                     
-                    {/* Bidding Toggle */}
                     <div className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-xl border border-gray-100">
                       <div className="flex items-center gap-2">
                          <Gavel size={14} className="text-indigo-600" />
@@ -486,7 +445,7 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                                  </div>
                                ) : (
                                  activeRide.bids.map(bid => {
-                                   const rider = mockBackend.getRiders().find(r => r.id === bid.riderId);
+                                   const rider = MOCK_LOCATIONS.find(r => r.id === bid.riderId) || { name: 'Pilot', rating: '5.0' }; // Use simplified finder
                                    return (
                                      <div key={bid.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between group hover:border-indigo-600 transition-all">
                                        <div className="flex items-center gap-3">
@@ -494,21 +453,17 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                                             <UserIcon size={20} />
                                           </div>
                                           <div>
-                                            <p className="text-xs font-black uppercase leading-none mb-1">{rider?.name || 'Pilot'}</p>
+                                            <p className="text-xs font-black uppercase leading-none mb-1">{(rider as any).name || 'Pilot'}</p>
                                             <div className="flex items-center gap-1">
                                               <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                                              <span className="text-[10px] font-bold text-gray-500">{rider?.rating || '5.0'}</span>
+                                              <span className="text-[10px] font-bold text-gray-500">{(rider as any).rating || '5.0'}</span>
                                             </div>
                                           </div>
                                        </div>
                                        <div className="flex flex-col items-end gap-2">
                                           <p className="text-lg font-black italic text-indigo-600 leading-none">₱{bid.bidAmount}</p>
                                           <button 
-                                            onClick={() => {
-                                              mockBackend.acceptBid(activeRide.id, bid.id);
-                                              const updated = mockBackend.getRides().find(r => r.id === activeRide.id);
-                                              if (updated) setActiveRide(updated);
-                                            }}
+                                            onClick={() => handleAcceptBid(bid)}
                                             className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase shadow-lg shadow-indigo-100 hover:scale-105 active:scale-95 transition-all"
                                           >
                                             Accept
@@ -544,7 +499,7 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                              <p className="text-[10px] font-black italic text-gray-400">{activeRide.distance.toFixed(2)} KM Road Mission</p>
                              <p className="text-lg font-black italic">Total: ₱{activeRide.totalFare.toFixed(0)}</p>
                            </div>
-                           <button onClick={() => mockBackend.updateRide(activeRide.id, { status: 'cancelled' })} className="w-full bg-black text-white py-3 rounded-xl text-[10px] font-black uppercase shadow-xl">Cancel Request</button>
+                           <button onClick={handleCancelRide} className="w-full bg-black text-white py-3 rounded-xl text-[10px] font-black uppercase shadow-xl">Cancel Request</button>
                         </div>
                      </div>
                   </div>
