@@ -61,6 +61,11 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
 
     L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
 
+    // Force size recalculation after a short delay to ensure the container is ready
+    setTimeout(() => {
+      mapRef.current?.invalidateSize();
+    }, 200);
+
     // Initial location attempt to center map
     useCurrentLocation(true);
 
@@ -71,6 +76,15 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
       }
     };
   }, []);
+
+  // Recalculate map size when switching back to home tab
+  useEffect(() => {
+    if (activeTab === 'home' && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.invalidateSize();
+      }, 100);
+    }
+  }, [activeTab]);
 
   // Fetch saved pins
   useEffect(() => {
@@ -503,7 +517,7 @@ Fast, Safe & Regulated Transport.
   return (
     <div className="relative w-full h-[calc(100vh-10rem)] rounded-3xl overflow-hidden bg-gray-200 border-4 border-white shadow-2xl">
       {/* Fullscreen Map Layer */}
-      <div id="leaflet-map" ref={mapContainerRef} className="absolute inset-0 z-0" />
+      <div id="leaflet-map" ref={mapContainerRef} className="absolute inset-0 z-0 h-full w-full" />
 
       {/* Tab Overlay logic */}
       {activeTab === 'history' && renderHistory()}
@@ -511,7 +525,7 @@ Fast, Safe & Regulated Transport.
       {/* Save Pin Modal */}
       {showSaveModal && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-fade-in pointer-events-auto">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl space-y-6">
+          <div className="bg-white rounded-[2.5rem] w-full max-sm p-8 shadow-2xl space-y-6">
             <div className="text-center">
               <div className="w-16 h-16 bg-yellow-400 rounded-3xl flex items-center justify-center mx-auto mb-4 text-black shadow-xl rotate-3">
                 <Bookmark size={32} />
