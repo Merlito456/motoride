@@ -10,7 +10,7 @@ import {
   ShieldCheck, History, Wallet, LocateFixed, Map as MapIcon,
   MousePointer2, ArrowLeft, Phone, MessageSquare, CreditCard, PlusCircle,
   Calendar, ChevronRight, X, MousePointerClick, FileText, Download,
-  Bookmark, Home, Briefcase, Trash2, Heart, Loader2
+  Bookmark, Home, Briefcase, Trash2, Heart, Loader2, Gavel, User as UserIcon
 } from 'lucide-react';
 
 interface PassengerPortalProps {
@@ -84,7 +84,6 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
     setSavedPins(mockBackend.getSavedLocations(user.id));
   }, [user.id]);
 
-  // Handle actual road routing when both points are selected
   useEffect(() => {
     const fetchRoadRoute = async () => {
       if (!pickup || !destination) {
@@ -95,16 +94,13 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
 
       setIsRouting(true);
       try {
-        // Use OSRM public routing API
         const url = `https://router.project-osrm.org/route/v1/driving/${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`;
         const response = await fetch(url);
         const data = await response.json();
 
         if (data.routes && data.routes[0]) {
           const route = data.routes[0];
-          setRoadDistance(route.distance / 1000); // Meters to KM
-          
-          // OSRM returns [lng, lat], Leaflet needs [lat, lng]
+          setRoadDistance(route.distance / 1000);
           const coords = route.geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]] as [number, number]);
           setCurrentRoute(coords);
         }
@@ -192,7 +188,6 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
          mapRef.current.fitBounds(polylineRef.current.getBounds().pad(0.3), { animate: true });
       }
     } else if (pickup && destination) {
-      // Fallback to straight line while routing
       const latlngs: [number, number][] = [[pickup.latitude, pickup.longitude], [destination.latitude, destination.longitude]];
       polylineRef.current = L.polyline(latlngs, { color: '#000', weight: 2, dashArray: '5, 10', opacity: 0.4 }).addTo(mapRef.current);
     }
@@ -207,7 +202,7 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
       const allRides = mockBackend.getRides();
       const updated = allRides.find(r => r.id === activeRide?.id);
       if (updated) setActiveRide(updated);
-    }, 3000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [user.id, activeRide?.id]);
@@ -221,7 +216,7 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
       passengerId: user.id,
       pickupLocation: pickup,
       destination,
-      routePolyline: currentRoute, // Persist actual road route
+      routePolyline: currentRoute,
       distance: dist,
       baseFare,
       totalFare: baseFare + FARE_CONFIG.ADMIN_FEE,
@@ -351,19 +346,14 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
     );
   };
 
-  /**
-   * Fix: Added missing renderHistory function to display user's past rides.
-   */
   const renderHistory = () => {
     const rides = mockBackend.getRides().filter(r => r.passengerId === user.id && r.status === 'completed');
-    
     return (
       <div className="absolute inset-0 z-[70] bg-white overflow-y-auto p-6 md:p-8 animate-fade-in">
         <div className="flex items-center justify-between mb-8">
           <h3 className="text-2xl font-black italic tracking-tighter uppercase">Ride History</h3>
           <History className="text-gray-400" />
         </div>
-        
         {rides.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400 space-y-4">
             <Calendar size={48} strokeWidth={1} />
@@ -378,24 +368,12 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                     {getStatusBadge(ride.status)}
                     <span className="text-[10px] font-black text-gray-400 uppercase">{new Date(ride.createdAt).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0"></div>
-                    <p className="text-xs font-bold text-gray-600 truncate">{ride.pickupLocation.placeName}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0"></div>
-                    <p className="text-xs font-bold text-gray-600 truncate">{ride.destination.placeName}</p>
-                  </div>
+                  <div className="flex items-center gap-3"><div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0"></div><p className="text-xs font-bold text-gray-600 truncate">{ride.pickupLocation.placeName}</p></div>
+                  <div className="flex items-center gap-3"><div className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0"></div><p className="text-xs font-bold text-gray-600 truncate">{ride.destination.placeName}</p></div>
                 </div>
-                
                 <div className="flex items-center justify-between md:flex-col md:items-end gap-2 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-6">
                   <p className="text-xl font-black italic text-gray-800">₱{ride.totalFare.toFixed(0)}</p>
-                  <button 
-                    onClick={() => downloadOfficialReceipt(ride)}
-                    className="flex items-center gap-2 text-[10px] font-black uppercase text-yellow-600 hover:text-yellow-700 transition-colors"
-                  >
-                    <Download size={12} /> Receipt
-                  </button>
+                  <button onClick={() => downloadOfficialReceipt(ride)} className="flex items-center gap-2 text-[10px] font-black uppercase text-yellow-600 hover:text-yellow-700 transition-colors"><Download size={12} /> Receipt</button>
                 </div>
               </div>
             ))}
@@ -413,17 +391,6 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
 
       {activeTab === 'history' && renderHistory()}
 
-      {showSaveModal && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm pointer-events-auto">
-          <div className="bg-white rounded-[2.5rem] w-full max-sm p-8 shadow-2xl space-y-6">
-            <h3 className="text-xl font-black italic uppercase text-center">SAVE LOCATION</h3>
-            <input type="text" value={saveLabel} onChange={(e) => setSaveLabel(e.target.value)} placeholder="Label Name" className="w-full bg-gray-50 border rounded-2xl px-6 py-4 font-bold" />
-            <button onClick={handleSavePin} className="w-full bg-black text-white py-4 rounded-2xl font-black uppercase text-xs">Save Pin</button>
-            <button onClick={() => setShowSaveModal(null)} className="w-full text-gray-400 font-black uppercase text-xs">Cancel</button>
-          </div>
-        </div>
-      )}
-
       {!selectionMode && activeTab === 'home' && (
         <>
           {!activeRide ? (
@@ -437,10 +404,24 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                        <button onClick={() => setInputMethod('pin')} className={`px-3 py-1 rounded-md text-[8px] font-black uppercase ${inputMethod === 'pin' ? 'bg-black text-yellow-400' : 'text-gray-500'}`}>Pin</button>
                     </div>
                   </div>
-                  <div className="p-3 space-y-2">
+                  <div className="p-3 space-y-3">
                     <LocationInput label="Pickup" value={pickup} type="pickup" />
                     <LocationInput label="Destination" value={destination} type="destination" />
                     
+                    {/* Bidding Toggle */}
+                    <div className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex items-center gap-2">
+                         <Gavel size={14} className="text-indigo-600" />
+                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">Open Bidding</span>
+                      </div>
+                      <button 
+                        onClick={() => setBiddingEnabled(!biddingEnabled)}
+                        className={`w-10 h-5 rounded-full p-1 transition-all ${biddingEnabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-3 h-3 bg-white rounded-full transition-all ${biddingEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+
                     {isRouting && (
                       <div className="flex items-center gap-2 px-2 py-1 text-[10px] font-black text-indigo-600 animate-pulse uppercase">
                         <Loader2 size={12} className="animate-spin" /> Calculating road route...
@@ -457,11 +438,13 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
                     <button 
                       onClick={handleBookRide}
                       disabled={!pickup || !destination || isRouting}
-                      className={`w-full font-black py-2 rounded-xl text-xs uppercase tracking-widest shadow-lg ${
-                        pickup && destination && !isRouting ? 'bg-yellow-400 text-black shadow-yellow-200' : 'bg-gray-100 text-gray-300'
+                      className={`w-full font-black py-3 rounded-xl text-xs uppercase tracking-widest shadow-lg transition-all ${
+                        pickup && destination && !isRouting 
+                          ? biddingEnabled ? 'bg-indigo-600 text-white shadow-indigo-200' : 'bg-yellow-400 text-black shadow-yellow-200'
+                          : 'bg-gray-100 text-gray-300'
                       }`}
                     >
-                      {isRouting ? 'Routing...' : 'Confirm Ride'}
+                      {isRouting ? 'Routing...' : biddingEnabled ? 'Open for Bidding' : 'Confirm Ride'}
                     </button>
                   </div>
                 </div>
@@ -474,16 +457,95 @@ const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbSt
             <div className="absolute inset-0 z-20 pointer-events-none p-4 flex flex-col justify-end">
                <div className="w-full max-w-lg mx-auto pointer-events-auto">
                   <div className="bg-white/95 backdrop-blur-lg rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-slide-up">
-                     <div className="bg-yellow-400 p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3"><Navigation size={14} className="text-black" /><h3 className="text-sm font-black italic uppercase">Mission Active</h3></div>
+                     <div className={`${activeRide.biddingEnabled && activeRide.status === 'pending' ? 'bg-indigo-600' : 'bg-yellow-400'} p-4 flex items-center justify-between transition-colors`}>
+                        <div className="flex items-center gap-3">
+                          {activeRide.biddingEnabled && activeRide.status === 'pending' ? <Gavel size={14} className="text-white" /> : <Navigation size={14} className="text-black" />}
+                          <h3 className={`text-sm font-black italic uppercase ${activeRide.biddingEnabled && activeRide.status === 'pending' ? 'text-white' : 'text-black'}`}>
+                            {activeRide.biddingEnabled && activeRide.status === 'pending' ? 'Bidding Command' : 'Mission Active'}
+                          </h3>
+                        </div>
                         {getStatusBadge(activeRide.status)}
                      </div>
-                     <div className="p-4 flex flex-col gap-4">
-                        <div className="space-y-1">
-                          <p className="text-[8px] font-bold text-gray-400 uppercase">Route Info</p>
-                          <p className="text-[10px] font-black italic">{activeRide.distance.toFixed(2)} KM Road Mission</p>
+                     
+                     <div className="p-5 space-y-4">
+                        {/* If Bidding is enabled and no rider accepted yet */}
+                        {activeRide.biddingEnabled && activeRide.status === 'pending' && (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                              <p className="text-[10px] font-black uppercase text-gray-400">Incoming Offers</p>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse" />
+                                <span className="text-[10px] font-black uppercase text-indigo-600">Searching Pilots</span>
+                              </div>
+                            </div>
+                            
+                            <div className="max-h-48 overflow-y-auto space-y-3 pr-1">
+                               {activeRide.bids.length === 0 ? (
+                                 <div className="text-center py-6 text-gray-300">
+                                   <p className="text-[10px] font-black uppercase">No bids received yet</p>
+                                 </div>
+                               ) : (
+                                 activeRide.bids.map(bid => {
+                                   const rider = mockBackend.getRiders().find(r => r.id === bid.riderId);
+                                   return (
+                                     <div key={bid.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between group hover:border-indigo-600 transition-all">
+                                       <div className="flex items-center gap-3">
+                                          <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-yellow-400">
+                                            <UserIcon size={20} />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-black uppercase leading-none mb-1">{rider?.name || 'Pilot'}</p>
+                                            <div className="flex items-center gap-1">
+                                              <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                                              <span className="text-[10px] font-bold text-gray-500">{rider?.rating || '5.0'}</span>
+                                            </div>
+                                          </div>
+                                       </div>
+                                       <div className="flex flex-col items-end gap-2">
+                                          <p className="text-lg font-black italic text-indigo-600 leading-none">₱{bid.bidAmount}</p>
+                                          <button 
+                                            onClick={() => {
+                                              mockBackend.acceptBid(activeRide.id, bid.id);
+                                              const updated = mockBackend.getRides().find(r => r.id === activeRide.id);
+                                              if (updated) setActiveRide(updated);
+                                            }}
+                                            className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase shadow-lg shadow-indigo-100 hover:scale-105 active:scale-95 transition-all"
+                                          >
+                                            Accept
+                                          </button>
+                                       </div>
+                                     </div>
+                                   );
+                                 })
+                               )}
+                            </div>
+                          </div>
+                        )}
+
+                        {assignedRider && (
+                          <div className="bg-gray-50 p-4 rounded-2xl flex items-center justify-between animate-fade-in">
+                            <div className="flex items-center gap-4">
+                               <img src={`https://picsum.photos/seed/${assignedRider.id}/64/64`} className="w-12 h-12 rounded-xl shadow-lg border-2 border-white" alt="Pilot" />
+                               <div>
+                                  <p className="text-[10px] font-black uppercase text-gray-400 leading-none mb-1">Assigned Pilot</p>
+                                  <p className="text-sm font-black italic">{assignedRider.name}</p>
+                                  <p className="text-[10px] font-bold text-indigo-600">{assignedRider.vehicle.model} • {assignedRider.vehicle.plateNumber}</p>
+                               </div>
+                            </div>
+                            <div className="flex gap-2">
+                               <button className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-green-600"><Phone size={18} /></button>
+                               <button className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-blue-600"><MessageSquare size={18} /></button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-2">
+                           <div className="flex justify-between items-center px-1">
+                             <p className="text-[10px] font-black italic text-gray-400">{activeRide.distance.toFixed(2)} KM Road Mission</p>
+                             <p className="text-lg font-black italic">Total: ₱{activeRide.totalFare.toFixed(0)}</p>
+                           </div>
+                           <button onClick={() => mockBackend.updateRide(activeRide.id, { status: 'cancelled' })} className="w-full bg-black text-white py-3 rounded-xl text-[10px] font-black uppercase shadow-xl">Cancel Request</button>
                         </div>
-                        <button onClick={() => mockBackend.updateRide(activeRide.id, { status: 'cancelled' })} className="w-full bg-black text-white py-2 rounded-xl text-[10px] font-black uppercase">Cancel Request</button>
                      </div>
                   </div>
                </div>
