@@ -111,12 +111,26 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
       maxZoom: 20,
     }).addTo(mapRef.current);
 
+    // Initial size recalculation
+    setTimeout(() => {
+      mapRef.current?.invalidateSize();
+    }, 300);
+
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
+  }, [activeTab]);
+
+  // Recalculate size when tab switching back to dashboard
+  useEffect(() => {
+    if (activeTab === 'dashboard' && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.invalidateSize();
+      }, 100);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -298,8 +312,8 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ activeTab, dbStatus }) => {
                     <span className="text-[10px] font-black uppercase tracking-[0.2em]">Live Global Radar</span>
                  </div>
               </div>
-              <div className="h-[450px] rounded-[2rem] overflow-hidden">
-                 <div id="admin-radar-map" ref={mapContainerRef} className="h-full w-full" />
+              <div className="h-[450px] rounded-[2rem] overflow-hidden relative">
+                 <div id="admin-radar-map" ref={mapContainerRef} className="h-full w-full absolute inset-0 z-0" />
               </div>
            </div>
         </div>
