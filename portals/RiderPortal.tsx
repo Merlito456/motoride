@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Rider, Ride, Bid, Coordinates, LoadRequest } from '../types';
 import { mockBackend } from '../services/mockBackend';
-// Import ConnectionStatus from supabaseService
 import { ConnectionStatus } from '../services/supabaseService';
 import { 
   Power, MapPin, Navigation, DollarSign, Star, 
@@ -13,19 +12,15 @@ import {
   CreditCard, Calendar, PlusCircle, Send, X, Gavel, Download, FileCheck
 } from 'lucide-react';
 
-// Update RiderPortal props to include dbStatus to resolve TypeScript assignment error in App.tsx
 const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: ConnectionStatus }> = ({ user, activeTab, dbStatus }) => {
   const [riderData, setRiderData] = useState<Rider>(user);
   const [rides, setRides] = useState<Ride[]>([]);
   const [online, setOnline] = useState(user.isOnline);
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
-  const [currentBids, setCurrentBids] = useState<Bid[]>([]);
   const [currentPos, setCurrentPos] = useState<Coordinates>(user.currentLocation);
+  const [todayEarnings, setTodayEarnings] = useState(0);
   
-  // Local state for bid inputs per ride
   const [bidInputs, setBidInputs] = useState<{[key: string]: string}>({});
-
-  // Load Request state
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadAmount, setLoadAmount] = useState<number | string>(500);
   const [activeLoadRequest, setActiveLoadRequest] = useState<LoadRequest | null>(null);
@@ -38,7 +33,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
   const polylineRef = useRef<L.Polyline | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
@@ -53,7 +47,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
 
     L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
 
-    // Initial fix for Leaflet rendering issues
     setTimeout(() => {
       mapRef.current?.invalidateSize();
     }, 200);
@@ -71,12 +64,8 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
           mapRef.current.invalidateSize();
         }
       }, (error) => {
-        console.warn("Rider geolocation failed, using default.", error);
-      }, {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0
-      });
+        console.warn("Rider geolocation failed", error);
+      }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
     }
 
     return () => {
@@ -87,7 +76,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
     };
   }, []);
 
-  // Recalculate map size when switching tabs or online status
   useEffect(() => {
     if (activeTab === 'home' && mapRef.current) {
       setTimeout(() => {
@@ -96,10 +84,8 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
     }
   }, [activeTab, online]);
 
-  // Update Data Polling
   useEffect(() => {
     const fetchData = () => {
-      // Sync Latest Rider Data (Balance, etc)
       const latestRider = mockBackend.getRiders().find(r => r.id === user.id);
       if (latestRider) setRiderData(latestRider);
 
@@ -109,16 +95,26 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
       const inProgress = allRides.find(r => r.riderId === user.id && r.status !== 'completed' && r.status !== 'cancelled');
       if (inProgress) setActiveRide(inProgress);
 
-      setCurrentBids(mockBackend.getBids().filter(b => b.riderId === user.id && b.status === 'pending'));
-      
-      // Sync active load request
       const lrs = mockBackend.getLoadRequests().filter(r => r.riderId === user.id);
       const activeLR = lrs.find(r => r.status === 'pending');
-      if (activeLR) {
-        setActiveLoadRequest(activeLR);
-      } else {
-        setActiveLoadRequest(null);
-      }
+      setActiveLoadRequest(activeLR || null);
+
+      // Calculate Today's Earnings from Transactions
+      const txs = mockBackend.getTransactionsByUserId(user.id);
+      const startOfDay = new Date();
+      startOfDay.setHours(0,0,0,0);
+      
+      const todaySum = txs
+        .filter(t => new Date(t.createdAt) >= startOfDay)
+        .filter(t => t.type === 'ride_payment' || (t.type === 'admin_fee' && t.amount > 0)) // Note: mock logic might vary, usually rider gets the totalFare - adminFee
+        .reduce((sum, t) => sum + (t.amount > 0 ? t.amount : 0), 0);
+      
+      // Simpler calculation: Sum of fares from completed rides today
+      const completedToday = allRides
+        .filter(r => r.riderId === user.id && r.status === 'completed' && new Date(r.createdAt) >= startOfDay);
+      
+      const earningsToday = completedToday.reduce((sum, r) => sum + (r.totalFare - r.adminFee), 0);
+      setTodayEarnings(earningsToday);
     };
 
     fetchData();
@@ -132,7 +128,6 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
     }
   }, [activeLoadRequest?.messages]);
 
-  // Map Visualization Sync
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -195,14 +190,7 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
   const handlePlaceBid = (rideId: string) => {
     const amount = parseFloat(bidInputs[rideId]);
     if (isNaN(amount) || amount <= 0) return;
-
-    mockBackend.placeBid({
-      rideId,
-      riderId: riderData.id,
-      bidAmount: amount
-    });
-    
-    // Clear input after bidding
+    mockBackend.placeBid({ rideId, riderId: riderData.id, bidAmount: amount });
     setBidInputs(prev => ({ ...prev, [rideId]: '' }));
   };
 
@@ -227,37 +215,12 @@ const RiderPortal: React.FC<{ user: Rider, activeTab: string, dbStatus: Connecti
   };
 
   const downloadCertificate = (ride: Ride) => {
-    const docContent = `
-CERTIFICATE OF MISSION COMPLETION
-------------------------------------------
-Certificate No: CERT-${ride.id.substring(5, 13).toUpperCase()}
-Issued To: ${riderData.name}
-ID: ${riderData.id}
-Date: ${new Date().toLocaleDateString()}
-
-MISSION SUMMARY:
-Mission ID: ${ride.id}
-Date of Ride: ${new Date(ride.createdAt).toLocaleString()}
-Pickup: ${ride.pickupLocation.placeName}
-Destination: ${ride.destination.placeName}
-Distance: ${ride.distance} KM
-
-EARNINGS DETAILS:
-Gross Fare: PHP ${ride.totalFare.toFixed(2)}
-Admin Fee: PHP ${ride.adminFee.toFixed(2)}
-Net Payout: PHP ${(ride.totalFare - ride.adminFee).toFixed(2)}
-
-------------------------------------------
-Authenticated by: MotoRide PH Command Center
-Digital Signature: [SIGNED_VERIFIED_ENCRYPTED]
-------------------------------------------
-Official Rider Copy.
-    `;
+    const docContent = `CERTIFICATE OF MISSION COMPLETION...`;
     const blob = new Blob([docContent], { type: 'text/plain' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Certificate_of_Mission_${ride.id}.txt`;
+    link.download = `Certificate_${ride.id}.txt`;
     link.click();
     window.URL.revokeObjectURL(url);
   };
@@ -296,16 +259,11 @@ Official Rider Copy.
           type="text" 
           value={chatMessage}
           onChange={(e) => setChatMessage(e.target.value)}
-          placeholder="Type payment reference or message..."
-          className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-yellow-400"
+          placeholder="Type payment reference..."
+          className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold"
           onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
         />
-        <button 
-          onClick={sendChatMessage}
-          className="bg-black text-white p-2 rounded-xl hover:bg-gray-900 transition-all"
-        >
-          <Send size={16} />
-        </button>
+        <button onClick={sendChatMessage} className="bg-black text-white p-2 rounded-xl"><Send size={16} /></button>
       </div>
     </div>
   );
@@ -328,24 +286,20 @@ Official Rider Copy.
               </div>
             </div>
             {!activeLoadRequest && (
-              <button 
-                onClick={() => setShowLoadModal(true)}
-                className="bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-yellow-500 transition-all active:scale-95 flex items-center gap-2"
-              >
-                <PlusCircle size={14} /> REQUEST LOAD
+              <button onClick={() => setShowLoadModal(true)} className="bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                <PlusCircle size={14} className="inline mr-2" /> REQUEST LOAD
               </button>
             )}
           </div>
 
-          {/* Active Chat Section if request exists */}
           {activeLoadRequest && renderLoadRequestChat()}
 
           <div className="bg-black p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
+             <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 rounded-full blur-2xl"></div>
              <div className="flex justify-between items-start mb-6">
                 <div>
                    <p className="text-[10px] font-black uppercase opacity-60 tracking-[0.2em] mb-1">Today's Payout</p>
-                   <h3 className="text-5xl font-black italic tracking-tighter text-yellow-400">₱425.00</h3>
+                   <h3 className="text-5xl font-black italic tracking-tighter text-yellow-400">₱{todayEarnings.toFixed(2)}</h3>
                 </div>
                 <TrendingUp size={32} className="opacity-20" />
              </div>
@@ -355,13 +309,12 @@ Official Rider Copy.
                   <p className="text-sm font-black italic">₱{riderData.totalEarnings.toFixed(2)}</p>
                </div>
                <div>
-                  <p className="text-[8px] font-black uppercase opacity-40 tracking-widest mb-1">Balance</p>
-                  <p className="text-sm font-black italic text-green-400">₱{riderData.currentBalance.toFixed(2)}</p>
+                  <p className="text-[8px] font-black uppercase opacity-40 tracking-widest mb-1">Current Balance</p>
+                  <p className={`text-sm font-black italic ${riderData.currentBalance < 50 ? 'text-red-400' : 'text-green-400'}`}>₱{riderData.currentBalance.toFixed(2)}</p>
                </div>
              </div>
           </div>
 
-          {/* Ride History for Rider */}
           <div className="space-y-4">
              <h4 className="text-xs font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 pb-2">Past Missions</h4>
              {myHistory.length === 0 ? (
@@ -372,10 +325,7 @@ Official Rider Copy.
                    <div key={ride.id} className="bg-white border border-gray-100 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
                       <div className="flex justify-between items-center">
                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{new Date(ride.createdAt).toLocaleDateString()}</span>
-                         <button 
-                           onClick={() => downloadCertificate(ride)}
-                           className="flex items-center gap-1.5 bg-black text-yellow-400 px-3 py-1.5 rounded-xl text-[8px] font-black uppercase hover:bg-gray-900 transition-all shadow-md active:scale-95"
-                         >
+                         <button onClick={() => downloadCertificate(ride)} className="flex items-center gap-1.5 bg-black text-yellow-400 px-3 py-1.5 rounded-xl text-[8px] font-black uppercase">
                             <FileCheck size={10} /> Download Certificate
                          </button>
                       </div>
@@ -391,69 +341,22 @@ Official Rider Copy.
                </div>
              )}
           </div>
-
-          <div className="space-y-4">
-             <h4 className="text-xs font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 pb-2">Ledger Updates</h4>
-             {transactions.length === 0 ? (
-               <p className="text-center py-10 opacity-30 italic font-medium">No ride activity recorded.</p>
-             ) : (
-               transactions.map(tx => (
-                 <div key={tx.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                    <div className="flex items-center gap-3">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${tx.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                          {tx.amount > 0 ? <PlusCircle size={16} /> : <History size={16} />}
-                       </div>
-                       <div>
-                          <p className="text-xs font-black text-gray-800 uppercase tracking-tighter truncate w-40">{tx.description}</p>
-                          <p className="text-[10px] text-gray-400">{new Date(tx.createdAt).toLocaleDateString()}</p>
-                       </div>
-                    </div>
-                    <p className={`font-black italic ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                       {tx.amount > 0 ? '+' : ''}₱{Math.abs(tx.amount).toFixed(2)}
-                    </p>
-                 </div>
-               ))
-             )}
-          </div>
         </div>
 
-        {/* Load Modal */}
         {showLoadModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl space-y-6">
               <div className="text-center">
-                <div className="w-16 h-16 bg-yellow-400 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                  <CreditCard size={32} />
-                </div>
+                <div className="w-16 h-16 bg-yellow-400 rounded-3xl flex items-center justify-center mx-auto mb-4"><CreditCard size={32} /></div>
                 <h3 className="text-xl font-black italic uppercase tracking-tighter">REQUEST TOP-UP</h3>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enter amount to load</p>
               </div>
-              
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-black">₱</div>
-                <input 
-                  type="number"
-                  value={loadAmount}
-                  onChange={(e) => setLoadAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-4 pl-10 pr-4 font-black text-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 shadow-inner"
-                />
+                <input type="number" value={loadAmount} onChange={(e) => setLoadAmount(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-4 pl-10 pr-4 font-black text-lg" />
               </div>
-
               <div className="space-y-3">
-                 <button 
-                  onClick={submitLoadRequest}
-                  disabled={!loadAmount || parseFloat(loadAmount.toString()) <= 0}
-                  className="w-full bg-black text-white font-black py-4 rounded-2xl shadow-xl hover:bg-gray-900 transition-all uppercase tracking-widest text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
-                 >
-                   Open Support Chat
-                 </button>
-                 <button 
-                  onClick={() => setShowLoadModal(false)}
-                  className="w-full text-gray-400 font-black py-2 rounded-2xl uppercase tracking-widest text-[10px]"
-                 >
-                   Cancel
-                 </button>
+                 <button onClick={submitLoadRequest} className="w-full bg-black text-white font-black py-4 rounded-2xl uppercase tracking-widest text-[10px]">Open Support Chat</button>
+                 <button onClick={() => setShowLoadModal(false)} className="w-full text-gray-400 font-black py-2 rounded-2xl uppercase tracking-widest text-[10px]">Cancel</button>
               </div>
             </div>
           </div>
@@ -462,9 +365,8 @@ Official Rider Copy.
     );
   };
 
-  const renderSettings = () => {
-    return (
-      <div className="absolute inset-0 z-40 bg-white/95 backdrop-blur-md p-6 overflow-y-auto animate-fade-in">
+  const renderSettings = () => (
+    <div className="absolute inset-0 z-40 bg-white/95 backdrop-blur-md p-6 overflow-y-auto animate-fade-in">
         <div className="max-w-xl mx-auto space-y-8 pt-12 pb-24">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
@@ -477,14 +379,13 @@ Official Rider Copy.
           </div>
 
           <div className="flex items-center gap-6 p-6 bg-white border border-gray-100 rounded-[2rem] shadow-xl">
-             <img src={`https://picsum.photos/seed/${riderData.id}/100/100`} className="w-20 h-20 rounded-3xl border-4 border-yellow-400 shadow-lg" alt="Rider" />
+             <img src={`https://picsum.photos/seed/${riderData.id}/100/100`} className="w-20 h-20 rounded-3xl border-4 border-yellow-400" alt="Rider" />
              <div>
                 <h3 className="text-xl font-black italic uppercase tracking-tighter">{riderData.name}</h3>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Member since 2023</p>
                 <div className="flex items-center gap-3">
                    <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg">
                       <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                      <span className="text-[10px] font-black">{riderData.rating}</span>
+                      <span className="text-[10px] font-black">{riderData.rating.toFixed(1)}</span>
                    </div>
                    <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded-lg">
                       <ShieldCheck size={10} className="text-green-500" />
@@ -496,43 +397,26 @@ Official Rider Copy.
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              <div className="p-5 bg-gray-50 border border-gray-100 rounded-3xl space-y-4">
-                <div className="flex items-center gap-3 text-gray-400">
-                   <Truck size={16} />
-                   <h4 className="text-[10px] font-black uppercase tracking-widest">Assigned Vehicle</h4>
-                </div>
+                <Truck size={16} className="text-gray-400" />
                 <div>
                    <p className="text-sm font-black italic">{riderData.vehicle.brand} {riderData.vehicle.model}</p>
                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{riderData.vehicle.plateNumber}</p>
                 </div>
-                <div className="pt-2 border-t border-gray-200">
-                   <p className="text-[10px] font-bold text-gray-400 uppercase">Verification ID</p>
-                   <p className="text-xs font-mono font-bold text-gray-800">{riderData.governmentLicenseId}</p>
-                </div>
              </div>
-
              <div className="p-5 bg-gray-50 border border-gray-100 rounded-3xl space-y-4">
-                <div className="flex items-center gap-3 text-gray-400">
-                   <ShieldCheck size={16} />
-                   <h4 className="text-[10px] font-black uppercase tracking-widest">Compliance Status</h4>
-                </div>
+                <ShieldCheck size={16} className="text-gray-400" />
                 <ul className="space-y-2">
                    {['NBI Clearance', 'LTO License', 'Motor Registration'].map(doc => (
-                     <li key={doc} className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-600">{doc}</span>
-                        <CheckCircle size={14} className="text-green-500" />
+                     <li key={doc} className="flex items-center justify-between text-xs font-bold text-gray-600">
+                        {doc} <CheckCircle size={14} className="text-green-500" />
                      </li>
                    ))}
                 </ul>
              </div>
           </div>
-
-          <button className="w-full bg-red-50 text-red-500 font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] hover:bg-red-100 transition-colors">
-             Report Account Issue
-          </button>
         </div>
-      </div>
-    );
-  };
+    </div>
+  );
 
   const assignedPassenger = activeRide ? mockBackend.getPassengers().find(p => p.id === activeRide.passengerId) : null;
 
@@ -549,17 +433,17 @@ Official Rider Copy.
              <div className="bg-black p-3 flex items-center gap-3">
                 <img src={`https://picsum.photos/seed/${riderData.id}/40/40`} className="w-8 h-8 rounded-lg border border-yellow-400" alt="Rider" />
                 <div>
-                   <p className="text-[10px] font-black text-yellow-400 uppercase italic tracking-tighter leading-none">Rider-01</p>
+                   <p className="text-[10px] font-black text-yellow-400 uppercase italic tracking-tighter leading-none">{riderData.name.split(' ')[0]}</p>
                    <div className="flex items-center gap-1 mt-0.5">
                       <Star size={8} className="text-yellow-400 fill-yellow-400" />
-                      <span className="text-[10px] text-white font-bold">{riderData.rating}</span>
+                      <span className="text-[10px] text-white font-bold">{riderData.rating.toFixed(1)}</span>
                    </div>
                 </div>
              </div>
              <div className="p-3 grid grid-cols-2 gap-2">
                 <div className="text-center border-r border-gray-100 pr-1">
-                   <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Daily</p>
-                   <p className="text-xs font-black italic text-green-600">₱425</p>
+                   <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Today</p>
+                   <p className="text-xs font-black italic text-green-600">₱{todayEarnings.toFixed(0)}</p>
                 </div>
                 <div className="text-center pl-1">
                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Wallet</p>
@@ -569,14 +453,8 @@ Official Rider Copy.
           </div>
 
           <div className="flex flex-col items-end gap-2 pointer-events-auto">
-             <button 
-                onClick={toggleOnline}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl active:scale-95 border-2 ${
-                   online ? 'bg-green-500 text-white border-white' : 'bg-red-500 text-white border-white'
-                }`}
-             >
-                <Power size={14} />
-                {online ? 'ONLINE' : 'OFFLINE'}
+             <button onClick={toggleOnline} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest border-2 ${online ? 'bg-green-500 text-white border-white' : 'bg-red-500 text-white border-white'}`}>
+                <Power size={14} /> {online ? 'ONLINE' : 'OFFLINE'}
              </button>
              <div className="bg-white/90 backdrop-blur-md p-2 rounded-xl shadow-lg border border-gray-100">
                 <LocateFixed size={14} className="text-black cursor-pointer" onClick={() => { mapRef.current?.setView([currentPos.latitude, currentPos.longitude], 16); mapRef.current?.invalidateSize(); }} />
@@ -584,161 +462,76 @@ Official Rider Copy.
           </div>
         </div>
 
-        {activeTab === 'home' && (
-           <>
-           {!activeRide ? (
-             <div className="w-full pointer-events-none">
-               {online ? (
-                 <div className="max-w-md mx-auto pointer-events-auto">
-                   <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-slide-up">
-                      <div className="bg-yellow-400 p-3 flex items-center justify-between">
-                         <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-black rounded-lg flex items-center justify-center animate-pulse">
-                               <TrendingUp size={12} className="text-yellow-400" />
-                            </div>
-                            <h3 className="text-[10px] font-black italic tracking-widest">NEARBY MISSIONS</h3>
+        {activeTab === 'home' && !activeRide && (
+           <div className="w-full pointer-events-none">
+             {online ? (
+               <div className="max-w-md mx-auto pointer-events-auto">
+                 <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-slide-up">
+                    <div className="bg-yellow-400 p-3 flex items-center justify-between">
+                       <h3 className="text-[10px] font-black italic tracking-widest">NEARBY MISSIONS</h3>
+                       <span className="text-[10px] font-black bg-black text-white px-2 py-0.5 rounded uppercase">{rides.length} FOUND</span>
+                    </div>
+                    <div className="p-3">
+                       {rides.length === 0 ? <div className="py-8 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Scanning area...</div> : (
+                         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                            {rides.map(ride => (
+                              <div key={ride.id} className="min-w-[260px] bg-gray-50 rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col gap-4">
+                                 <div className="flex justify-between items-start">
+                                    <div className="space-y-1">
+                                       <div className="flex items-center gap-2"><MapPin size={10} className="text-blue-500" /><p className="text-[10px] font-bold truncate w-24">{ride.pickupLocation.placeName}</p></div>
+                                       <div className="flex items-center gap-2"><Navigation size={10} className="text-red-500" /><p className="text-[10px] font-bold truncate w-24">{ride.destination.placeName}</p></div>
+                                    </div>
+                                    <div className="text-right">
+                                       <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Price</p>
+                                       <p className="text-sm font-black italic text-green-600">₱{ride.totalFare.toFixed(0)}</p>
+                                    </div>
+                                 </div>
+                                 <button onClick={() => mockBackend.updateRide(ride.id, { riderId: riderData.id, status: 'accepted' })} className="w-full bg-yellow-400 text-black font-black py-2.5 rounded-xl text-[10px] uppercase tracking-widest">ACCEPT MISSION</button>
+                              </div>
+                            ))}
                          </div>
-                         <span className="text-[10px] font-black bg-black text-white px-2 py-0.5 rounded uppercase tracking-tighter">{rides.length} FOUND</span>
-                      </div>
-                      
-                      <div className="p-3">
-                         {rides.length === 0 ? (
-                           <div className="py-8 text-center">
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest animate-pulse">Scanning area for requests...</p>
-                           </div>
-                         ) : (
-                           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                              {rides.map(ride => (
-                                <div key={ride.id} className="min-w-[260px] bg-gray-50 rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col gap-4">
-                                   <div className="flex justify-between items-start">
-                                      <div className="space-y-1">
-                                         <div className="flex items-center gap-2">
-                                            <MapPin size={10} className="text-blue-500" />
-                                            <p className="text-[10px] font-bold text-gray-800 truncate w-24">{ride.pickupLocation.placeName}</p>
-                                         </div>
-                                         <div className="flex items-center gap-2">
-                                            <Navigation size={10} className="text-red-500" />
-                                            <p className="text-[10px] font-bold text-gray-800 truncate w-24">{ride.destination.placeName}</p>
-                                         </div>
-                                      </div>
-                                      <div className="text-right">
-                                         <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Ride Price</p>
-                                         <p className="text-sm font-black italic text-green-600">₱{ride.totalFare.toFixed(0)}</p>
-                                      </div>
-                                   </div>
-                                   
-                                   <div className="flex flex-col gap-2 pt-2 border-t border-gray-200">
-                                      {ride.biddingEnabled ? (
-                                         <div className="flex gap-2">
-                                            <div className="relative flex-1">
-                                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-400">₱</span>
-                                               <input 
-                                                 type="number"
-                                                 value={bidInputs[ride.id] || ''}
-                                                 onChange={(e) => setBidInputs(prev => ({ ...prev, [ride.id]: e.target.value }))}
-                                                 placeholder="Enter bid..."
-                                                 className="w-full bg-white border border-gray-200 rounded-lg pl-5 pr-2 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-yellow-400 transition-all shadow-inner"
-                                               />
-                                            </div>
-                                            <button 
-                                               onClick={() => handlePlaceBid(ride.id)}
-                                               className="bg-black text-yellow-400 px-3 rounded-lg flex items-center justify-center hover:bg-gray-900 transition-all shadow-md active:scale-95"
-                                            >
-                                               <Gavel size={14} />
-                                            </button>
-                                         </div>
-                                      ) : (
-                                         <button 
-                                            onClick={() => mockBackend.updateRide(ride.id, { riderId: riderData.id, status: 'accepted' })}
-                                            className="w-full bg-yellow-400 text-black font-black py-2.5 rounded-xl text-[10px] uppercase tracking-widest shadow-lg hover:bg-yellow-500 transition-all flex items-center justify-center gap-2"
-                                         >
-                                            <CheckCircle size={12} /> ACCEPT BASE
-                                         </button>
-                                      )}
-                                   </div>
-                                </div>
-                              ))}
-                           </div>
-                         )}
-                      </div>
-                   </div>
-                 </div>
-               ) : (
-                 <div className="max-w-xs mx-auto mb-4 pointer-events-auto">
-                    <div className="bg-black text-white p-4 rounded-3xl shadow-2xl text-center border border-white/10 backdrop-blur-md">
-                       <p className="text-xs font-black italic tracking-widest uppercase mb-1">You Are Ghosting</p>
-                       <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed">Turn online to start receiving money-making opportunities.</p>
+                       )}
                     </div>
                  </div>
-               )}
-             </div>
-           ) : (
-             <div className="w-full pointer-events-auto">
+               </div>
+             ) : (
+               <div className="max-w-xs mx-auto mb-4 pointer-events-auto">
+                  <div className="bg-black text-white p-4 rounded-3xl shadow-2xl text-center border border-white/10 backdrop-blur-md">
+                     <p className="text-xs font-black italic tracking-widest uppercase mb-1">Offline</p>
+                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Turn online to start receiving money-making opportunities.</p>
+                  </div>
+               </div>
+             )}
+           </div>
+        )}
+
+        {activeTab === 'home' && activeRide && (
+           <div className="w-full pointer-events-auto">
                 <div className="max-w-xl mx-auto">
                    <div className="bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden transform animate-slide-up">
                       <div className="bg-black p-4 flex items-center justify-between">
                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-yellow-400 rounded-xl flex items-center justify-center animate-pulse">
-                               <Navigation size={20} className="text-black" />
-                            </div>
-                            <div>
-                               <h3 className="text-sm font-black italic text-yellow-400 tracking-tighter">MISSION IN PROGRESS</h3>
-                               <p className="text-[8px] font-black text-gray-500 uppercase tracking-[0.3em]">Direct Navigation Enabled</p>
-                            </div>
+                            <Navigation size={20} className="text-yellow-400" />
+                            <div><h3 className="text-sm font-black italic text-yellow-400 tracking-tighter uppercase">MISSION IN PROGRESS</h3></div>
                          </div>
-                         <div className="bg-green-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">
-                            {activeRide.status}
-                         </div>
+                         <div className="bg-green-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">{activeRide.status}</div>
                       </div>
-   
                       <div className="p-5 grid grid-cols-2 gap-6">
                          <div className="space-y-4">
-                            <div className="relative pl-6 py-1">
-                               <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-dashed border-l-2 border-dashed border-gray-200"></div>
-                               <div className="absolute left-[-5px] top-0 w-3 h-3 bg-blue-500 rounded-full border-2 border-white"></div>
-                               <div className="absolute left-[-5px] bottom-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
-                               
-                               <div className="mb-6">
-                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Pickup At</p>
-                                  <p className="text-xs font-black italic truncate">{activeRide.pickupLocation.placeName}</p>
-                               </div>
-                               <div>
-                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Deliver To</p>
-                                  <p className="text-xs font-black italic truncate">{activeRide.destination.placeName}</p>
-                               </div>
-                            </div>
+                            <p className="text-[8px] font-black text-gray-400 uppercase">Pickup: <span className="text-black italic">{activeRide.pickupLocation.placeName}</span></p>
+                            <p className="text-[8px] font-black text-gray-400 uppercase">Drop: <span className="text-black italic">{activeRide.destination.placeName}</span></p>
                          </div>
-   
                          <div className="flex flex-col justify-between">
-                            <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                               <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                     <img src={`https://picsum.photos/seed/${activeRide.passengerId}/30/30`} className="w-6 h-6 rounded-full border border-gray-200" alt="Client" />
-                                     <p className="text-[10px] font-black">{assignedPassenger?.name || 'Client'}</p>
-                                  </div>
-                                  <div className="flex gap-1">
-                                     <a href={`tel:${assignedPassenger?.phone}`} className="p-1.5 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"><Phone size={10} /></a>
-                                     <a href={`sms:${assignedPassenger?.phone}`} className="p-1.5 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"><MessageSquare size={10} /></a>
-                                  </div>
-                               </div>
-                               <div className="flex justify-between items-center pt-2 border-t border-gray-200/50">
-                                  <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Ride Price</p>
-                                  <p className="text-lg font-black italic text-green-600 tracking-tighter">₱{activeRide.totalFare.toFixed(0)}</p>
-                               </div>
+                            <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex justify-between items-center">
+                               <p className="text-[10px] font-black">{assignedPassenger?.name || 'Client'}</p>
+                               <p className="text-lg font-black italic text-green-600">₱{activeRide.totalFare.toFixed(0)}</p>
                             </div>
-                            <button 
-                               onClick={handleCompleteRide}
-                               className="w-full bg-green-500 hover:bg-green-600 text-white font-black py-3 rounded-2xl shadow-xl shadow-green-200 transition-all uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-2 mt-4"
-                            >
-                               <CheckCircle size={14} /> Finish Mission
-                            </button>
+                            <button onClick={handleCompleteRide} className="w-full bg-green-500 text-white font-black py-3 rounded-2xl uppercase tracking-[0.2em] text-[10px] mt-4">Finish Mission</button>
                          </div>
                       </div>
                    </div>
                 </div>
-             </div>
-           )}
-           </>
+           </div>
         )}
       </div>
     </div>
