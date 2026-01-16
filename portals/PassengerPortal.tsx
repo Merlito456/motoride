@@ -4,6 +4,8 @@ import L from 'leaflet';
 import { Passenger, Ride, RideStatus, Coordinates, Bid, Transaction, SavedLocation } from '../types';
 import { mockBackend } from '../services/mockBackend';
 import { MOCK_LOCATIONS, FARE_CONFIG } from '../constants';
+// Import ConnectionStatus from supabaseService
+import { ConnectionStatus } from '../services/supabaseService';
 import { 
   MapPin, Navigation, Search, DollarSign, Star, 
   ShieldCheck, History, Wallet, LocateFixed, Map as MapIcon,
@@ -15,9 +17,11 @@ import {
 interface PassengerPortalProps {
   user: Passenger;
   activeTab: string;
+  // Add dbStatus prop to resolve assignment error in App.tsx
+  dbStatus: ConnectionStatus;
 }
 
-const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab }) => {
+const PassengerPortal: React.FC<PassengerPortalProps> = ({ user, activeTab, dbStatus }) => {
   // Initialize as null to avoid auto-adding origin/destination
   const [pickup, setPickup] = useState<Coordinates | null>(null);
   const [destination, setDestination] = useState<Coordinates | null>(null);
